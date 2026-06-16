@@ -38,10 +38,10 @@ The game is designed so that wars are often decided before combat occurs, throug
 2.3 Orders are persistent commitments
 
 * Players do not micromanage units.
-* They issue mission orders that execute autonomously.
+* They issue mission orders plus simple explicit rules that execute autonomously.
 * Once launched, fleets:
     * cannot be instantly redirected
-    * only respond to pre-defined conditional logic
+    * only respond to pre-defined conditional logic described in the explicit rules below
 
 2.4 The universe is partially observed
 
@@ -126,23 +126,21 @@ Each system contains:
 
 5.1 Fleets as Autonomous Agents
 
-Fleets are not directly controlled after launch, they are staffed by an "automated machine intelligence".
+Fleets are not directly controlled after launch. They follow a standing mission and a small set of explicit rules.
 
 They carry:
 
-* mission objective
-* engagement rules
-* retreat conditions
-* logistics constraints
-* optional heuristics (“doctrine scripts”)
+* a destination system
+* a mission
+* an ordered list of rules
 
-Example Fleet Doctrine
+Rules are written using exposed state variables and simple actions rather than hidden AI behavior.
 
-* If enemy strength matches our expectations, engage
-* If allied fleet arrives, combine forces
-* If enemy fleet arrives, disengage
-* If fuel < threshold, divert to nearest resupply system
-* If system already conquered, hold orbit
+Example Fleet Rules
+
+* If `system.enemy_ships > fleet.ships`, `retreat`
+* If `system.enemy_ships == 0`, `hold`
+* Otherwise, `engage`
 
 5.2 Fleet Outcomes are Computed Offline
 
@@ -151,6 +149,7 @@ Example Fleet Doctrine
 * Outcomes are deterministic given:
     * fleet composition
     * local conditions
+    * fleet rules
     * known modifiers
     * a small level of randomness like real battles
 
@@ -411,3 +410,92 @@ This distinction matters:
 * `launch_time` is when the Pigeon departed
 * `created_at` is when a packet was assembled
 * `observed_at` is when the underlying event actually happened
+
+⸻
+
+15. Explicit Rules: Fleets
+
+15.1 Role
+
+Fleets are groups of ships that travel and act under one standing order set.
+
+15.2 Core Behavior
+
+* A fleet is launched with:
+    * a `destination_system`
+    * a `mission`
+    * an ordered list of `rules[]`
+* Once launched, a fleet acts autonomously according to those rules
+* A fleet cannot be retargeted in transit
+* New orders can only affect a fleet when they physically arrive at the star system the fleet is currently in
+
+15.3 Missions
+
+Initial missions are:
+
+* `attack`
+* `reinforce`
+* `resupply`
+
+15.4 Rule Model
+
+* Each rule is a simple condition and action pair
+* Rules are evaluated in order
+* The first matching rule wins
+* If no rule matches, the fleet defaults to its mission behavior
+
+15.5 Exposed State Variables
+
+Initial fleet rule evaluation may reference:
+
+* `fleet.ships`
+* `fleet.salt`
+* `fleet.system`
+* `system.owner`
+* `system.enemy_ships`
+* `system.friendly_ships`
+
+15.6 Actions
+
+Initial rule actions are:
+
+* `engage`
+* `hold`
+* `retreat`
+* `resupply`
+
+15.7 Evaluation Timing
+
+Fleet rules are evaluated when:
+
+* the fleet arrives in a star system
+* the fleet enters a new local state that requires a decision
+
+15.8 Example Orders
+
+Example `attack` order:
+
+* `destination_system`: `New Carthage`
+* `mission`: `attack`
+* `rules[]`:
+    * if `system.enemy_ships > fleet.ships` -> `retreat`
+    * if `system.enemy_ships == 0` -> `hold`
+    * otherwise -> `engage`
+
+Example `reinforce` order:
+
+* `destination_system`: `New Carthage`
+* `mission`: `reinforce`
+* `rules[]`:
+    * if `system.owner != friendly` -> `hold`
+    * if `system.enemy_ships > 0` -> `engage`
+    * otherwise -> `hold`
+
+Example `resupply` order:
+
+* `destination_system`: `Tau Ceti`
+* `mission`: `resupply`
+* `rules[]`:
+    * if `fleet.salt <= 0` -> `hold`
+    * if `system.owner != friendly` -> `retreat`
+    * otherwise -> `resupply`
