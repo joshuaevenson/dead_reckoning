@@ -192,24 +192,27 @@ Instead of a single currency:
 
 * Salt
   * Colloquial name for the antimatter.
-  * Used to move ships to near lightspeed.
-  * Used to launch Pigeons carrying interstellar messages.
-  * Availability in a system depends on the type of star (it can be generated from stars at a constant rate).
+  * Used to move fleets and launch Pigeons.
+  * Produced by stars over time.
+  * Production depends on the type of star and is defined in the explicit rules below.
 * Metals
   * Used for construction of defenses, ships, etc.
+  * Can be transported by fleets as cargo.
   * Availability depends on the star system.
 
 7.2 Logistics as strategy
 
-* Fleets require provisioning.
-* Every fleet requires provisioning
-* Supply chains matter over long distances
-* Expansion is constrained by logistics capacity
+* Fleets require enough salt to begin a journey.
+* Salt cost is driven primarily by distance and carried mass.
+* Fleets may transport surplus salt and metals between systems.
+* Supply chains matter over long distances.
+* Expansion is constrained by logistics capacity.
 
 7.3 Strategic chokepoints
 
-* Resource-rich systems become critical hubs
-* Communication relays and fuel depots create strategic geography
+* Salt-rich systems become critical hubs.
+* Communication relays and fuel depots create strategic geography.
+* Control of productive stars is one of the main reasons to take and hold territory.
 
 ⸻
 
@@ -579,3 +582,78 @@ This keeps conquest simple:
 * clear the defenders
 * maintain meaningful control
 * wait out the timer
+
+⸻
+
+17. Explicit Rules: Salt and Logistics
+
+17.1 Role
+
+Salt is the main strategic fuel resource. It is consumed by interstellar movement and by launching Pigeons.
+
+17.2 Salt Consumption
+
+* Fleets spend salt on movement
+* Pigeons consume exactly `1 salt` when launched
+* Salt cost for fleet movement is driven primarily by:
+    * distance traveled
+    * total carried mass
+* Heavier payloads cost more salt to move
+* A ship weighs more than a Pigeon
+* A fleet carrying surplus metals or salt weighs more than an otherwise identical fleet
+
+17.3 Launch Requirement
+
+* A fleet must have enough salt to reach its declared destination before it can begin interstellar travel
+* The game should not allow a fleet to start a trip it cannot complete
+* A fleet that somehow runs out of salt in transit is considered lost, but normal order validation should make this impossible
+
+17.4 Fleet Cargo
+
+* Fleets may carry extra `salt`
+* Fleets may carry extra `metals`
+* Cargo increases movement cost because it increases total carried mass
+* Salt and metals carried by a fleet may be deposited into a controlled system on arrival
+
+17.5 Resupply
+
+* Fleets resupply by drawing salt from the system they are currently in
+* A fleet may only harvest salt locally if its faction owns the system
+* If a fleet runs out of salt while inside a star system, it must wait there until it can harvest or receive more salt
+
+17.6 System Production
+
+* Systems generate salt over time for their current owner while that owner remains in control
+* Salt production comes from harvesting the system's star
+* Different star types produce different base amounts of salt
+* Salt production should fluctuate slightly over time using a small random percentage delta
+
+17.7 Strategic Implications
+
+* Salt-producing systems are strategically valuable even before considering population or industry
+* Long-distance campaigns depend on fuel supply, not just fleet size
+* Transporting fuel forward is itself a logistical commitment because fuel cargo makes fleets heavier
+
+17.8 Minimal State Variables
+
+Initial logistics evaluation may reference:
+
+* `fleet.salt`
+* `fleet.metals`
+* `fleet.mass`
+* `fleet.distance_to_destination`
+* `system.owner`
+* `system.salt_stockpile`
+* `system.salt_output`
+* `system.star_type`
+
+17.9 Example Travel Rule
+
+```text
+movement_cost = distance * total_mass
+
+if fleet.salt >= movement_cost:
+  travel_allowed = true
+else:
+  travel_allowed = false
+```
