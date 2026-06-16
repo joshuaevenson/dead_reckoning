@@ -111,7 +111,7 @@ Each system contains:
 * Ownership is event-derived (not mutable state).
 * On conquest:
     * the previous controlling faction enters government-in-exile
-    * control transitions via deterministic resolution of events
+    * control transitions via deterministic resolution of events described in the explicit rules below
 
 4.3 Distance & Travel
 
@@ -236,6 +236,8 @@ When a home system is captured:
     * loss of efficiency
     * increased communication cost
     * fragmentation of control
+
+Home system capture follows the same conquest rules as any other system, but the consequences are much larger.
 
 ⸻
 
@@ -499,3 +501,81 @@ Example `resupply` order:
     * if `fleet.salt <= 0` -> `hold`
     * if `system.owner != friendly` -> `retreat`
     * otherwise -> `resupply`
+
+⸻
+
+16. Explicit Rules: Conquest
+
+16.1 Role
+
+Conquest determines when ownership of a star system changes hands. Ownership does not change when an attacker merely arrives. It changes only when the attacker establishes control and holds it for long enough.
+
+16.2 Defenses
+
+* Each system may have `system.defense`
+* Defense is stationary
+* Defense is more expensive than a ship
+* Each point of `system.defense` counts as more combat power than a ship
+* Defense contributes to holding a system the same way ships do
+
+16.3 Holding a System
+
+* A system is held by a faction if that faction has at least one remaining ship or defense in the system
+* If a faction has no ships and no defense remaining, it is no longer holding the system
+* Fleets alone do not transfer ownership immediately
+
+16.4 Control Requirement
+
+* Conquest progress only begins when the attacker has sole meaningful control of the system
+* Sole meaningful control means:
+    * the attacker has ships or defense present
+    * the defender does not have enough remaining force to contest control
+* A token force is not enough to delay conquest indefinitely
+* The exact contest threshold should be derived from combat power rather than mere presence
+
+16.5 Capture Duration
+
+Ownership changes only after `capture_progress >= capture_duration`
+
+Where:
+
+* `capture_duration = base_time + infrastructure_time + tenure_time`
+* `base_time` is the default capture time for any system
+* `infrastructure_time` increases with how built out the system is
+* `tenure_time` increases with how long the current owner has controlled it
+
+This allows recently lost systems to be taken back quickly while long-held core systems take longer to flip.
+
+16.6 Capture Progress
+
+* If the attacker has sole meaningful control, `capture_progress` increases over time
+* If the defender regains meaningful control before the timer completes, conquest is interrupted
+* If the defender fully restores control before the timer completes, ownership never changes
+* A brief or insignificant enemy presence should not reset the timer by itself
+
+16.7 Minimal State Variables
+
+Initial conquest evaluation may reference:
+
+* `system.owner`
+* `system.defense`
+* `system.infrastructure`
+* `system.control_age`
+* `system.capture_progress`
+* `system.attacker_power`
+* `system.defender_power`
+
+16.8 Example Resolution Rule
+
+```text
+if attacker_power > contest_threshold and defender_power <= contest_threshold:
+  capture_progress += time
+else if defender_power > contest_threshold:
+  capture_progress = 0
+```
+
+This keeps conquest simple:
+
+* clear the defenders
+* maintain meaningful control
+* wait out the timer
