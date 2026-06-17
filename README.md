@@ -1,5 +1,15 @@
 # Redshift
 
+## Local UI
+
+The repo now includes a browser command table for driving the simulator against the real worker API.
+
+* Run `npm run dev`
+* Open `http://localhost:8787`
+* Choose a bundled scenario, edit the JSON if needed, and run the simulation
+
+This local server uses the compiled worker for `/api/*` routes and serves the static UI from [`public/`](/Users/joshuaevenson/Documents/GitHub/dead_reckoning/public). For Cloudflare deployment, [`wrangler.jsonc`](/Users/joshuaevenson/Documents/GitHub/dead_reckoning/wrangler.jsonc) is configured to serve the same static assets.
+
 ## Core Concept
 
 This is a distributed, asynchronous, information-driven space strategy game where:

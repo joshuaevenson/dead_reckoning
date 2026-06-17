@@ -1,0 +1,137 @@
+{
+  "name": "profile_requires_intel",
+  "seed": 41,
+  "startDate": "2240-06-01",
+  "durationDays": 6,
+  "commanderProfiles": [
+    {
+      "id": "napoleon",
+      "kind": "napoleonic",
+      "options": {
+        "homeReserveShips": 4,
+        "minimumAttackShips": 6
+      }
+    }
+  ],
+  "factions": [
+    {
+      "id": "napoleon",
+      "name": "Napoleonic League",
+      "homeSystemId": "n_home",
+      "commanderProfileId": "napoleon"
+    },
+    {
+      "id": "red",
+      "name": "Red Compact",
+      "homeSystemId": "r_home"
+    }
+  ],
+  "systems": [
+    {
+      "id": "n_home",
+      "name": "Napoleon Home",
+      "starType": "yellow_star",
+      "metalRichness": "standard",
+      "ownerId": "napoleon",
+      "saltStockpile": 140,
+      "metalStockpile": 90,
+      "infrastructure": 10,
+      "defense": 6,
+      "controlAgeDays": 300,
+      "garrisonShips": {
+        "napoleon": 14
+      }
+    },
+    {
+      "id": "r_home",
+      "name": "Red Home",
+      "starType": "yellow_star",
+      "metalRichness": "standard",
+      "ownerId": "red",
+      "saltStockpile": 120,
+      "metalStockpile": 90,
+      "infrastructure": 10,
+      "defense": 6,
+      "controlAgeDays": 300,
+      "garrisonShips": {
+        "red": 10
+      }
+    },
+    {
+      "id": "fork",
+      "name": "Fork",
+      "starType": "red_dwarf",
+      "metalRichness": "poor",
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "infrastructure": 0,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "west",
+      "name": "West Gate",
+      "starType": "yellow_star",
+      "metalRichness": "rich",
+      "ownerId": "red",
+      "saltStockpile": 18,
+      "metalStockpile": 18,
+      "infrastructure": 2,
+      "defense": 1,
+      "controlAgeDays": 45,
+      "garrisonShips": {
+        "red": 3
+      }
+    }
+  ],
+  "routes": [
+    {
+      "id": "n-fork",
+      "a": "n_home",
+      "b": "fork",
+      "distance": 1,
+      "travelDays": 1,
+      "headingFromA": "frontier",
+      "headingFromB": "napoleon"
+    },
+    {
+      "id": "r-fork",
+      "a": "r_home",
+      "b": "fork",
+      "distance": 1,
+      "travelDays": 1,
+      "headingFromA": "frontier",
+      "headingFromB": "red"
+    },
+    {
+      "id": "fork-west",
+      "a": "fork",
+      "b": "west",
+      "distance": 1,
+      "travelDays": 1,
+      "headingFromA": "west",
+      "headingFromB": "fork"
+    }
+  ],
+  "expectations": [
+    {
+      "at": "2240-06-06",
+      "path": "systems.west.ownerId",
+      "op": "eq",
+      "value": "red"
+    },
+    {
+      "at": "2240-06-06",
+      "path": "systems.west.captureProgress",
+      "op": "eq",
+      "value": 0
+    },
+    {
+      "at": "2240-06-06",
+      "path": "factions.napoleon.ownedSystems",
+      "op": "gte",
+      "value": 2
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "name": "dead_reckoning",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-scenario-catalog.mjs && tsc -p tsconfig.json",
+    "dev": "npm run build && node scripts/dev-server.mjs",
+    "test": "npm run build && node --test test/*.test.js"
+  }
+}

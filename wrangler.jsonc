@@ -1,0 +1,8 @@
+{
+  "name": "dead-reckoning-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-16",
+  "assets": {
+    "directory": "./public"
+  }
+}

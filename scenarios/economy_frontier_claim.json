@@ -1,0 +1,88 @@
+{
+  "name": "economy_frontier_claim",
+  "seed": 7,
+  "startDate": "2240-01-01",
+  "durationDays": 10,
+  "factions": [
+    {
+      "id": "blue",
+      "name": "Blue League",
+      "homeSystemId": "home"
+    }
+  ],
+  "systems": [
+    {
+      "id": "home",
+      "name": "Home",
+      "starType": "yellow_star",
+      "metalRichness": "standard",
+      "ownerId": "blue",
+      "saltStockpile": 60,
+      "metalStockpile": 80,
+      "infrastructure": 10,
+      "defense": 6,
+      "controlAgeDays": 120,
+      "garrisonShips": {
+        "blue": 6
+      }
+    },
+    {
+      "id": "frontier",
+      "name": "Frontier",
+      "starType": "yellow_star",
+      "metalRichness": "rich",
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "infrastructure": 1,
+      "defense": 0,
+      "controlAgeDays": 0
+    }
+  ],
+  "routes": [
+    {
+      "id": "home-frontier",
+      "a": "home",
+      "b": "frontier",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "frontier",
+      "headingFromB": "homeward"
+    }
+  ],
+  "commands": [
+    {
+      "type": "launch_fleet",
+      "at": "2240-01-01",
+      "factionId": "blue",
+      "originSystemId": "home",
+      "destinationSystemId": "frontier",
+      "ships": 4,
+      "mission": "attack",
+      "cargoSalt": 0,
+      "metals": 0,
+      "retreatSystemId": "home",
+      "name": "Claim Fleet"
+    }
+  ],
+  "expectations": [
+    {
+      "at": "2240-01-01",
+      "path": "systems.home.saltStockpile",
+      "op": "lte",
+      "value": 24
+    },
+    {
+      "at": "2240-01-06",
+      "path": "systems.frontier.ownerId",
+      "op": "eq",
+      "value": "blue"
+    },
+    {
+      "at": "2240-01-10",
+      "path": "systems.frontier.saltStockpile",
+      "op": "gte",
+      "value": 12
+    }
+  ]
+}

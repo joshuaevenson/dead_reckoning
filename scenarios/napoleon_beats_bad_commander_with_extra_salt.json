@@ -1,0 +1,197 @@
+{
+  "name": "napoleon_beats_bad_commander_with_extra_salt",
+  "seed": 19,
+  "startDate": "2240-03-01",
+  "durationDays": 20,
+  "commanderProfiles": [
+    {
+      "id": "napoleon",
+      "kind": "napoleonic",
+      "options": {
+        "homeReserveShips": 4,
+        "minimumAttackShips": 6,
+        "preferredSystems": 2
+      }
+    },
+    {
+      "id": "bad",
+      "kind": "bad_commander",
+      "options": {
+        "borderShipTarget": 5,
+        "homeDefenseTarget": 7
+      }
+    }
+  ],
+  "factions": [
+    {
+      "id": "napoleon",
+      "name": "Napoleonic League",
+      "homeSystemId": "n_home",
+      "commanderProfileId": "napoleon"
+    },
+    {
+      "id": "bad",
+      "name": "Bad Admiralty",
+      "homeSystemId": "b_home",
+      "commanderProfileId": "bad"
+    }
+  ],
+  "initialReports": [
+    {
+      "factionId": "napoleon",
+      "type": "intel",
+      "observedAt": "2240-03-01",
+      "sourceSystemId": "n_home",
+      "content": {
+        "systemId": "west",
+        "ownerId": "bad",
+        "ships": 3,
+        "defense": 1
+      }
+    },
+    {
+      "factionId": "napoleon",
+      "type": "intel",
+      "observedAt": "2240-03-01",
+      "sourceSystemId": "n_home",
+      "content": {
+        "systemId": "east",
+        "ownerId": "bad",
+        "ships": 3,
+        "defense": 1
+      }
+    }
+  ],
+  "systems": [
+    {
+      "id": "n_home",
+      "name": "Napoleon Home",
+      "starType": "yellow_star",
+      "metalRichness": "standard",
+      "ownerId": "napoleon",
+      "saltStockpile": 260,
+      "metalStockpile": 90,
+      "infrastructure": 10,
+      "defense": 6,
+      "controlAgeDays": 300,
+      "garrisonShips": {
+        "napoleon": 14
+      }
+    },
+    {
+      "id": "b_home",
+      "name": "Bad Home",
+      "starType": "yellow_star",
+      "metalRichness": "standard",
+      "ownerId": "bad",
+      "saltStockpile": 100,
+      "metalStockpile": 90,
+      "infrastructure": 10,
+      "defense": 6,
+      "controlAgeDays": 300,
+      "garrisonShips": {
+        "bad": 10
+      }
+    },
+    {
+      "id": "fork",
+      "name": "Fork",
+      "starType": "red_dwarf",
+      "metalRichness": "poor",
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "infrastructure": 0,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "west",
+      "name": "West Gate",
+      "starType": "yellow_star",
+      "metalRichness": "rich",
+      "ownerId": "bad",
+      "saltStockpile": 18,
+      "metalStockpile": 18,
+      "infrastructure": 2,
+      "defense": 1,
+      "controlAgeDays": 45,
+      "garrisonShips": {
+        "bad": 3
+      }
+    },
+    {
+      "id": "east",
+      "name": "East Gate",
+      "starType": "yellow_star",
+      "metalRichness": "standard",
+      "ownerId": "bad",
+      "saltStockpile": 18,
+      "metalStockpile": 18,
+      "infrastructure": 2,
+      "defense": 1,
+      "controlAgeDays": 45,
+      "garrisonShips": {
+        "bad": 3
+      }
+    }
+  ],
+  "routes": [
+    {
+      "id": "n-fork",
+      "a": "n_home",
+      "b": "fork",
+      "distance": 1,
+      "travelDays": 1,
+      "headingFromA": "frontier",
+      "headingFromB": "napoleon"
+    },
+    {
+      "id": "b-fork",
+      "a": "b_home",
+      "b": "fork",
+      "distance": 1,
+      "travelDays": 1,
+      "headingFromA": "frontier",
+      "headingFromB": "bad"
+    },
+    {
+      "id": "fork-west",
+      "a": "fork",
+      "b": "west",
+      "distance": 1,
+      "travelDays": 1,
+      "headingFromA": "west",
+      "headingFromB": "fork"
+    },
+    {
+      "id": "fork-east",
+      "a": "fork",
+      "b": "east",
+      "distance": 1,
+      "travelDays": 1,
+      "headingFromA": "east",
+      "headingFromB": "fork"
+    }
+  ],
+  "expectations": [
+    {
+      "at": "2240-03-20",
+      "path": "systems.west.ownerId",
+      "op": "eq",
+      "value": "napoleon"
+    },
+    {
+      "at": "2240-03-20",
+      "path": "systems.east.ownerId",
+      "op": "eq",
+      "value": "bad"
+    },
+    {
+      "at": "2240-03-20",
+      "path": "factions.napoleon.ownedSystems",
+      "op": "gte",
+      "value": 2
+    }
+  ]
+}

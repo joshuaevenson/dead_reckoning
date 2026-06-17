@@ -1,0 +1,179 @@
+{
+  "name": "profile_frontier_vs_turtle",
+  "seed": 31,
+  "startDate": "2240-04-01",
+  "durationDays": 20,
+  "commanderProfiles": [
+    {
+      "id": "expander",
+      "kind": "frontier_expander",
+      "options": {
+        "preferredSystems": 3,
+        "claimFleetShips": 4,
+        "homeReserveShips": 2,
+        "frontierDefenseTarget": 1,
+        "maxExpansionDistance": 3
+      }
+    },
+    {
+      "id": "turtle",
+      "kind": "turtle",
+      "options": {
+        "homeDefenseTarget": 8,
+        "frontierDefenseTarget": 3
+      }
+    }
+  ],
+  "factions": [
+    {
+      "id": "blue",
+      "name": "Blue League",
+      "homeSystemId": "blue_home",
+      "commanderProfileId": "expander"
+    },
+    {
+      "id": "green",
+      "name": "Green Bastion",
+      "homeSystemId": "green_home",
+      "commanderProfileId": "turtle"
+    }
+  ],
+  "systems": [
+    {
+      "id": "blue_home",
+      "name": "Blue Home",
+      "starType": "yellow_star",
+      "metalRichness": "standard",
+      "ownerId": "blue",
+      "saltStockpile": 60,
+      "metalStockpile": 80,
+      "infrastructure": 10,
+      "defense": 6,
+      "controlAgeDays": 200,
+      "garrisonShips": {
+        "blue": 6
+      }
+    },
+    {
+      "id": "blue_frontier_a",
+      "name": "Blue Frontier A",
+      "starType": "yellow_star",
+      "metalRichness": "rich",
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "infrastructure": 1,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "blue_frontier_b",
+      "name": "Blue Frontier B",
+      "starType": "red_dwarf",
+      "metalRichness": "exceptional",
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "infrastructure": 1,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "green_home",
+      "name": "Green Home",
+      "starType": "yellow_star",
+      "metalRichness": "standard",
+      "ownerId": "green",
+      "saltStockpile": 60,
+      "metalStockpile": 80,
+      "infrastructure": 10,
+      "defense": 6,
+      "controlAgeDays": 200,
+      "garrisonShips": {
+        "green": 6
+      }
+    },
+    {
+      "id": "green_frontier_a",
+      "name": "Green Frontier A",
+      "starType": "yellow_star",
+      "metalRichness": "rich",
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "infrastructure": 1,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "green_frontier_b",
+      "name": "Green Frontier B",
+      "starType": "red_dwarf",
+      "metalRichness": "exceptional",
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "infrastructure": 1,
+      "defense": 0,
+      "controlAgeDays": 0
+    }
+  ],
+  "routes": [
+    {
+      "id": "blue-a",
+      "a": "blue_home",
+      "b": "blue_frontier_a",
+      "distance": 1,
+      "travelDays": 1,
+      "headingFromA": "a",
+      "headingFromB": "home"
+    },
+    {
+      "id": "blue-b",
+      "a": "blue_home",
+      "b": "blue_frontier_b",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "b",
+      "headingFromB": "home"
+    },
+    {
+      "id": "green-a",
+      "a": "green_home",
+      "b": "green_frontier_a",
+      "distance": 1,
+      "travelDays": 1,
+      "headingFromA": "a",
+      "headingFromB": "home"
+    },
+    {
+      "id": "green-b",
+      "a": "green_home",
+      "b": "green_frontier_b",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "b",
+      "headingFromB": "home"
+    }
+  ],
+  "expectations": [
+    {
+      "at": "2240-04-20",
+      "path": "factions.blue.ownedSystems",
+      "op": "gte",
+      "value": 3
+    },
+    {
+      "at": "2240-04-20",
+      "path": "factions.green.ownedSystems",
+      "op": "eq",
+      "value": 1
+    },
+    {
+      "at": "2240-04-20",
+      "path": "systems.blue_frontier_a.ownerId",
+      "op": "eq",
+      "value": "blue"
+    }
+  ]
+}

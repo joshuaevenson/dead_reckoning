@@ -1,0 +1,188 @@
+{
+  "name": "profile_comms_discipline",
+  "seed": 37,
+  "startDate": "2240-05-01",
+  "durationDays": 20,
+  "commanderProfiles": [
+    {
+      "id": "disciplined",
+      "kind": "frontier_expander",
+      "options": {
+        "preferredSystems": 3,
+        "claimFleetShips": 4,
+        "homeReserveShips": 2,
+        "frontierDefenseTarget": 1,
+        "maxExpansionDistance": 3
+      }
+    },
+    {
+      "id": "chatty",
+      "kind": "chatty_frontier",
+      "options": {
+        "preferredSystems": 3,
+        "claimFleetShips": 4,
+        "homeReserveShips": 2,
+        "frontierDefenseTarget": 1,
+        "maxExpansionDistance": 3
+      }
+    }
+  ],
+  "factions": [
+    {
+      "id": "disc",
+      "name": "Disciplined League",
+      "homeSystemId": "disc_home",
+      "commanderProfileId": "disciplined"
+    },
+    {
+      "id": "chat",
+      "name": "Chatty League",
+      "homeSystemId": "chat_home",
+      "commanderProfileId": "chatty"
+    }
+  ],
+  "systems": [
+    {
+      "id": "disc_home",
+      "name": "Disc Home",
+      "starType": "yellow_star",
+      "metalRichness": "standard",
+      "ownerId": "disc",
+      "saltStockpile": 60,
+      "metalStockpile": 80,
+      "infrastructure": 10,
+      "defense": 6,
+      "controlAgeDays": 200,
+      "garrisonShips": {
+        "disc": 6
+      }
+    },
+    {
+      "id": "disc_frontier_a",
+      "name": "Disc Frontier A",
+      "starType": "yellow_star",
+      "metalRichness": "standard",
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "infrastructure": 1,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "disc_frontier_b",
+      "name": "Disc Frontier B",
+      "starType": "white_blue_star",
+      "metalRichness": "poor",
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "infrastructure": 2,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "chat_home",
+      "name": "Chat Home",
+      "starType": "yellow_star",
+      "metalRichness": "standard",
+      "ownerId": "chat",
+      "saltStockpile": 60,
+      "metalStockpile": 80,
+      "infrastructure": 10,
+      "defense": 6,
+      "controlAgeDays": 200,
+      "garrisonShips": {
+        "chat": 6
+      }
+    },
+    {
+      "id": "chat_frontier_a",
+      "name": "Chat Frontier A",
+      "starType": "yellow_star",
+      "metalRichness": "standard",
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "infrastructure": 1,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "chat_frontier_b",
+      "name": "Chat Frontier B",
+      "starType": "white_blue_star",
+      "metalRichness": "poor",
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "infrastructure": 2,
+      "defense": 0,
+      "controlAgeDays": 0
+    }
+  ],
+  "routes": [
+    {
+      "id": "disc-a",
+      "a": "disc_home",
+      "b": "disc_frontier_a",
+      "distance": 1,
+      "travelDays": 1,
+      "headingFromA": "a",
+      "headingFromB": "home"
+    },
+    {
+      "id": "disc-b",
+      "a": "disc_home",
+      "b": "disc_frontier_b",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "b",
+      "headingFromB": "home"
+    },
+    {
+      "id": "chat-a",
+      "a": "chat_home",
+      "b": "chat_frontier_a",
+      "distance": 1,
+      "travelDays": 1,
+      "headingFromA": "a",
+      "headingFromB": "home"
+    },
+    {
+      "id": "chat-b",
+      "a": "chat_home",
+      "b": "chat_frontier_b",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "b",
+      "headingFromB": "home"
+    }
+  ],
+  "expectations": [
+    {
+      "at": "2240-05-20",
+      "path": "factions.disc.totalSaltStockpile",
+      "op": "gte",
+      "value": 110
+    },
+    {
+      "at": "2240-05-20",
+      "path": "factions.chat.totalSaltStockpile",
+      "op": "lte",
+      "value": 105
+    },
+    {
+      "at": "2240-05-20",
+      "path": "factions.disc.ownedSystems",
+      "op": "gte",
+      "value": 3
+    },
+    {
+      "at": "2240-05-20",
+      "path": "factions.chat.reportCount",
+      "op": "gte",
+      "value": 10
+    }
+  ]
+}
