@@ -1,8 +1,5 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
-import Toolbar from "primevue/toolbar";
-import Panel from "primevue/panel";
-import Card from "primevue/card";
 import Tag from "primevue/tag";
 import Button from "primevue/button";
 import Select from "primevue/select";
@@ -268,6 +265,8 @@ const summaryCards = computed(() => {
   ];
 });
 
+const visibleFeedItems = computed(() => feedItems.value.slice(0, 7));
+
 const mapLayout = computed(() => {
   if (!currentSeat.value || !scenario.value) {
     return new Map();
@@ -293,15 +292,29 @@ const mapLayout = computed(() => {
   const columnCount = Math.max(1, uniqueDistances.length);
   for (const [columnIndex, systemIds] of grouped.entries()) {
     systemIds.sort((left, right) => left.localeCompare(right));
-    const x = 92 + (columnIndex / Math.max(1, columnCount - 1 || 1)) * 650;
+    const x = 170 + columnIndex * 320;
     const laneCount = Math.max(1, systemIds.length);
     for (const [index, systemId] of systemIds.entries()) {
-      const y = laneCount === 1 ? 240 : 78 + (index / (laneCount - 1)) * 340;
+      const y = laneCount === 1 ? 380 : 150 + index * 220;
       layout.set(systemId, { x, y });
     }
   }
 
   return layout;
+});
+
+const mapCanvas = computed(() => {
+  const points = [...mapLayout.value.values()];
+  if (points.length === 0) {
+    return { width: 1280, height: 860 };
+  }
+
+  const maxX = Math.max(...points.map((point) => point.x));
+  const maxY = Math.max(...points.map((point) => point.y));
+  return {
+    width: Math.max(1280, maxX + 260),
+    height: Math.max(860, maxY + 220),
+  };
 });
 
 function systemTone(systemId) {
@@ -350,15 +363,13 @@ const selectedSystemOverview = computed(() => {
         : snapshot.ownerId
           ? `Held by ${scenario.value.factions.find((faction) => faction.id === snapshot.ownerId)?.name ?? snapshot.ownerId}`
           : "Open System",
-    stats: [
-      { label: "Star", value: titleCase(system.starType) },
-      { label: "Metals", value: titleCase(system.metalRichness) },
+    starText: `${titleCase(system.starType)} star`,
+    metalText: `${titleCase(system.metalRichness)} metals`,
+    facts: [
       { label: "Defense", value: formatNumber(snapshot.defense) },
-      { label: "Friendly Ships", value: formatNumber(friendlyShips) },
-      { label: "Enemy Ships", value: formatNumber(enemyShips) },
-      { label: "Salt Output", value: `${STAR_OUTPUT[system.starType]}/day` },
-      { label: "Local Salt", value: formatNumber(snapshot.saltStockpile) },
-      { label: "Local Metals", value: formatNumber(snapshot.metalStockpile) },
+      { label: "Ships", value: `${formatNumber(friendlyShips)} friendly / ${formatNumber(enemyShips)} enemy` },
+      { label: "Yield", value: `${STAR_OUTPUT[system.starType]} salt + ${METAL_OUTPUT[system.metalRichness]} metal / day` },
+      { label: "Stores", value: `${formatNumber(snapshot.saltStockpile)} salt + ${formatNumber(snapshot.metalStockpile)} metal` },
     ],
   };
 });
@@ -636,162 +647,173 @@ onMounted(async () => {
 
 <template>
   <div class="app-shell">
-    <Toolbar class="command-header">
-      <template #start>
-        <div class="header-brand">
-          <span class="header-eyebrow">Dead Reckoning</span>
-          <span class="header-title">Command Table</span>
-        </div>
-      </template>
+    <header class="command-header">
+      <div class="header-brand">
+        <span class="header-eyebrow">Dead Reckoning</span>
+        <span class="header-title">Command Table</span>
+      </div>
 
-      <template #end>
-        <div class="header-meta">
-          <Tag v-if="currentSeat" severity="contrast" rounded>{{ currentSeat.faction.name }}</Tag>
-          <Tag v-if="result" severity="info" rounded>{{ result.endDate }}</Tag>
-          <Tag :severity="apiTone" rounded>{{ apiStatus }}</Tag>
+      <div v-if="summaryCards.length" class="header-analytics">
+        <div v-for="card in summaryCards" :key="card.label" class="analytics-pill">
+          <span class="analytics-label">{{ card.label }}</span>
+          <span class="analytics-value">{{ card.value }}</span>
         </div>
-      </template>
-    </Toolbar>
+      </div>
+
+      <div class="header-meta">
+        <Tag v-if="currentSeat" severity="contrast" rounded>{{ currentSeat.faction.name }}</Tag>
+        <Tag v-if="result" severity="info" rounded>{{ result.endDate }}</Tag>
+        <Tag :severity="apiTone" rounded>{{ apiStatus }}</Tag>
+      </div>
+    </header>
 
     <Message v-if="loadingError" severity="error" class="loading-message">
       {{ loadingError }}
     </Message>
 
-    <section v-if="summaryCards.length" class="summary-row">
-      <Card v-for="card in summaryCards" :key="card.label" class="summary-card">
-        <template #content>
-          <div class="summary-label">{{ card.label }}</div>
-          <div class="summary-value">{{ card.value }}</div>
-        </template>
-      </Card>
-    </section>
-
     <main class="battlefield">
-      <Panel class="map-panel">
-        <template #header>
-          <div class="panel-heading">
-            <div>
-              <div class="panel-kicker">Operational Picture</div>
-              <div class="panel-title">Galaxy Map</div>
+      <section class="map-panel">
+        <div class="map-topline">
+          <div>
+            <div class="panel-kicker">Operational Picture</div>
+            <div class="panel-title">Galaxy Map</div>
+          </div>
+
+          <div v-if="selectedSystemOverview" class="system-inspector">
+            <div class="system-summary">
+              <div class="system-name">{{ selectedSystemOverview.title }}</div>
+              <div class="system-subline">{{ selectedSystemOverview.owner }}</div>
+              <div class="system-subline">
+                {{ selectedSystemOverview.starText }} · {{ selectedSystemOverview.metalText }}
+              </div>
+            </div>
+
+            <div class="system-facts">
+              <div
+                v-for="fact in selectedSystemOverview.facts"
+                :key="`${selectedSystemOverview.title}-${fact.label}`"
+                class="system-fact"
+              >
+                <span class="system-fact-label">{{ fact.label }}</span>
+                <span class="system-fact-value">{{ fact.value }}</span>
+              </div>
             </div>
           </div>
-        </template>
 
-        <div v-if="selectedSystemOverview" class="selection-strip">
-          <div class="selection-block selection-title">
-            <div class="selection-name">{{ selectedSystemOverview.title }}</div>
-            <div class="selection-subtitle">{{ selectedSystemOverview.owner }}</div>
-          </div>
-          <div
-            v-for="stat in selectedSystemOverview.stats"
-            :key="`${selectedSystemOverview.title}-${stat.label}`"
-            class="selection-block"
-          >
-            <div class="selection-label">{{ stat.label }}</div>
-            <div class="selection-value">{{ stat.value }}</div>
+          <div v-else class="map-empty-state">
+            Select a star to inspect control, production, and available orders.
           </div>
         </div>
 
         <div class="map-stage">
-          <svg viewBox="0 0 820 520" class="galaxy-map" @click="selectedSystemId = null">
-            <line
-              v-for="route in scenario?.routes ?? []"
-              :key="route.id"
-              :x1="mapLayout.get(route.a)?.x"
-              :y1="mapLayout.get(route.a)?.y"
-              :x2="mapLayout.get(route.b)?.x"
-              :y2="mapLayout.get(route.b)?.y"
-              class="route-line"
-            />
-
-            <g
-              v-for="system in scenario?.systems ?? []"
-              :key="system.id"
-              class="system-group"
-              :transform="`translate(${mapLayout.get(system.id)?.x ?? 0} ${mapLayout.get(system.id)?.y ?? 0})`"
-              @click.stop="selectSystem(system.id)"
+          <div class="map-viewport">
+            <svg
+              :viewBox="`0 0 ${mapCanvas.width} ${mapCanvas.height}`"
+              class="galaxy-map"
+              :style="{ width: `${mapCanvas.width}px`, height: `${mapCanvas.height}px` }"
+              @click="selectedSystemId = null"
             >
-              <circle
-                v-if="snapshotSystem(system.id)?.captureProgress > 0 || snapshotSystem(system.id)?.claimProgress > 0"
-                r="25"
-                class="system-halo"
+              <line
+                v-for="route in scenario?.routes ?? []"
+                :key="route.id"
+                :x1="mapLayout.get(route.a)?.x"
+                :y1="mapLayout.get(route.a)?.y"
+                :x2="mapLayout.get(route.b)?.x"
+                :y2="mapLayout.get(route.b)?.y"
+                class="route-line"
               />
-              <circle
-                :class="['system-ring', `tone-${systemTone(system.id)}`, { selected: selectedSystemId === system.id }]"
-                r="16"
-              />
-              <circle :class="['system-core', starClass(system.starType)]" :r="system.starType === 'giant_or_exotic' ? 10 : 8" />
-              <text x="0" y="34" text-anchor="middle" class="system-label">{{ system.name }}</text>
-              <g v-if="inboundFleets(system.id).length > 0">
-                <circle cx="16" cy="-16" r="10" class="incoming-marker" />
-                <text x="16" y="-12" text-anchor="middle" class="incoming-text">{{ inboundFleets(system.id).length }}</text>
-              </g>
-            </g>
-          </svg>
-        </div>
-      </Panel>
 
-      <Panel class="feed-panel">
-        <template #header>
-          <div class="panel-heading">
-            <div>
-              <div class="panel-kicker">Live Feed</div>
-              <div class="panel-title">Command Feed</div>
-            </div>
-            <Tag severity="info" rounded>{{ feedItems.length }} items</Tag>
+              <g
+                v-for="system in scenario?.systems ?? []"
+                :key="system.id"
+                class="system-group"
+                :transform="`translate(${mapLayout.get(system.id)?.x ?? 0} ${mapLayout.get(system.id)?.y ?? 0})`"
+                @click.stop="selectSystem(system.id)"
+              >
+                <circle
+                  v-if="snapshotSystem(system.id)?.captureProgress > 0 || snapshotSystem(system.id)?.claimProgress > 0"
+                  r="25"
+                  class="system-halo"
+                />
+                <circle
+                  :class="['system-ring', `tone-${systemTone(system.id)}`, { selected: selectedSystemId === system.id }]"
+                  r="16"
+                />
+                <circle :class="['system-core', starClass(system.starType)]" :r="system.starType === 'giant_or_exotic' ? 10 : 8" />
+                <text x="0" y="34" text-anchor="middle" class="system-label">{{ system.name }}</text>
+                <g v-if="inboundFleets(system.id).length > 0">
+                  <circle cx="16" cy="-16" r="10" class="incoming-marker" />
+                  <text x="16" y="-12" text-anchor="middle" class="incoming-text">{{ inboundFleets(system.id).length }}</text>
+                </g>
+              </g>
+            </svg>
           </div>
-        </template>
+        </div>
+      </section>
+
+      <aside class="feed-panel">
+        <div class="feed-header">
+          <div>
+            <div>
+              <div class="panel-kicker">Signal Feed</div>
+              <div class="panel-title">Latest Reports</div>
+            </div>
+          </div>
+          <Tag severity="info" rounded>{{ feedItems.length }} items</Tag>
+        </div>
 
         <div class="feed-scroll">
-          <Card v-for="(item, index) in feedItems" :key="`${item.date}-${index}`" class="feed-card">
-            <template #content>
-              <div class="feed-card-top">
-                <Tag :severity="item.tone" rounded>{{ item.date }}</Tag>
-              </div>
-              <div class="feed-title">{{ item.title }}</div>
-              <p class="feed-copy">{{ item.summary }}</p>
-              <p class="feed-impact">{{ item.impact }}</p>
-            </template>
-          </Card>
+          <article v-for="(item, index) in visibleFeedItems" :key="`${item.date}-${index}`" class="feed-card">
+            <div class="feed-card-top">
+              <Tag :severity="item.tone" rounded>{{ item.date }}</Tag>
+            </div>
+            <div class="feed-title">{{ item.title }}</div>
+            <p class="feed-copy">{{ item.summary }}</p>
+            <p class="feed-impact">{{ item.impact }}</p>
+          </article>
+
+          <div v-if="feedItems.length > visibleFeedItems.length" class="feed-backlog">
+            +{{ feedItems.length - visibleFeedItems.length }} older reports in backlog
+          </div>
         </div>
-      </Panel>
+      </aside>
     </main>
 
-    <Panel class="orders-panel">
-      <template #header>
-        <div class="panel-heading">
+    <footer class="orders-panel">
+      <div class="orders-bar">
+        <div class="orders-actions">
+          <Button
+            v-for="action in ORDER_ACTIONS"
+            :key="action.key"
+            :label="action.label"
+            :icon="action.icon"
+            :severity="activeAction === action.key ? 'contrast' : 'secondary'"
+            :outlined="activeAction !== action.key"
+            @click="activeAction = action.key"
+          />
+        </div>
+
+        <div class="orders-status">
           <div>
-            <div class="panel-kicker">Orders Tray</div>
+            <div class="panel-kicker">Orders Dock</div>
             <div class="panel-title">Immediate Action</div>
           </div>
           <Tag :severity="selectedSystemFriendly ? 'success' : 'secondary'" rounded>
             {{ selectedSystemFriendly ? "Ready to draft" : "Select a friendly system" }}
           </Tag>
         </div>
-      </template>
-
-      <div class="orders-actions">
-        <Button
-          v-for="action in ORDER_ACTIONS"
-          :key="action.key"
-          :label="action.label"
-          :icon="action.icon"
-          :severity="activeAction === action.key ? 'contrast' : 'secondary'"
-          :outlined="activeAction !== action.key"
-          @click="activeAction = action.key"
-        />
       </div>
 
-      <div class="orders-layout">
-        <Card class="orders-form">
-          <template #content>
-            <Message v-if="!selectedSystem" severity="secondary">
-              Select a star on the map to see draftable orders.
-            </Message>
-            <Message v-else-if="!selectedSystemFriendly" severity="warn">
-              This system can be inspected, but not commanded from.
-            </Message>
-            <div v-else class="form-grid">
+      <div class="orders-drawer">
+        <Message v-if="!selectedSystem" severity="secondary">
+          Select a star on the map to see draftable orders.
+        </Message>
+        <Message v-else-if="!selectedSystemFriendly" severity="warn">
+          This system can be inspected, but not commanded from.
+        </Message>
+        <template v-else>
+          <div class="orders-layout">
+            <div class="form-grid">
               <div class="field">
                 <label>Origin</label>
                 <div class="static-field">{{ selectedSystem.system.name }}</div>
@@ -803,7 +825,7 @@ onMounted(async () => {
               </div>
 
               <div v-if="activeAction === 'send_pigeon'" class="field">
-                <label>Packet Type</label>
+                <label>Packet</label>
                 <Select v-model="orderDraft.packetType" :options="['intel', 'orders', 'logistics', 'diplomatic']" fluid />
               </div>
 
@@ -829,25 +851,23 @@ onMounted(async () => {
               </div>
 
               <div v-if="activeAction === 'trade'" class="field">
-                <label>Cargo Focus</label>
+                <label>Focus</label>
                 <Select v-model="orderDraft.tradeFocus" :options="['salt', 'metals']" fluid />
               </div>
             </div>
-          </template>
-        </Card>
 
-        <Card class="orders-brief">
-          <template #content>
-            <div class="brief-title">{{ orderBrief.title }}</div>
-            <ul class="brief-list">
-              <li v-for="line in orderBrief.lines" :key="line">{{ line }}</li>
-            </ul>
-            <p class="brief-footnote">
-              Draft preview only for now. This tray is focused on the player decision flow first.
-            </p>
-          </template>
-        </Card>
+            <div class="orders-brief">
+              <div class="brief-title">{{ orderBrief.title }}</div>
+              <ul class="brief-list">
+                <li v-for="line in orderBrief.lines" :key="line">{{ line }}</li>
+              </ul>
+              <p class="brief-footnote">
+                Draft preview only for now. This dock is focused on fast player decisions first.
+              </p>
+            </div>
+          </div>
+        </template>
       </div>
-    </Panel>
+    </footer>
   </div>
 </template>
