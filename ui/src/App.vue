@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import Tag from "primevue/tag";
 import Button from "primevue/button";
 import Select from "primevue/select";
@@ -20,8 +20,9 @@ const METAL_OUTPUT = {
   exceptional: 6,
 };
 const ORDER_ACTIONS = [
-  { key: "send_pigeon", label: "Send Pigeon", icon: "pi pi-send" },
-  { key: "launch_fleet", label: "Launch Fleet", icon: "pi pi-directions-alt" },
+  { key: "attack", label: "Attack", icon: "pi pi-send" },
+  { key: "reinforce", label: "Reinforce", icon: "pi pi-plus-circle" },
+  { key: "resupply", label: "Resupply", icon: "pi pi-box" },
   { key: "deploy_probe", label: "Deploy Probe", icon: "pi pi-search" },
   { key: "trade", label: "Trade", icon: "pi pi-sync" },
 ];
@@ -31,18 +32,20 @@ const scenario = ref(null);
 const result = ref(null);
 const seatFactionId = ref(null);
 const selectedSystemId = ref(null);
-const activeAction = ref("send_pigeon");
+const activeAction = ref("attack");
 const loadingError = ref("");
 const apiTone = ref("success");
 const apiStatus = ref("Link live");
+const mapViewport = ref(null);
+const mapCenteredOnce = ref(false);
+const systemNodes = new Map();
 
 const orderDraft = ref({
   destinationId: null,
-  packetType: "intel",
   ships: 3,
-  mission: "attack",
   anchorId: null,
   tradeFocus: "salt",
+  resupplyFocus: "salt",
 });
 
 function formatNumber(value) {
@@ -227,7 +230,11 @@ const destinationOptions = computed(() => {
   }
 
   return scenario.value.systems
-    .filter((system) => system.id !== selectedSystem.value.system.id)
+    .filter(
+      (system) =>
+        system.id !== selectedSystem.value.system.id
+        && routePlan(selectedSystem.value.system.id, system.id) !== null,
+    )
     .map((system) => ({ label: system.name, value: system.id }));
 });
 
@@ -374,6 +381,28 @@ const selectedSystemOverview = computed(() => {
   };
 });
 
+const commandRelay = computed(() => {
+  if (!selectedSystem.value || !selectedSystemFriendly.value || !currentSeat.value) {
+    return null;
+  }
+
+  const homeSystemId = currentSeat.value.faction.homeSystemId;
+  if (selectedSystem.value.system.id === homeSystemId) {
+    return {
+      title: "Local order",
+      detail: "Command seat is already present at this system.",
+    };
+  }
+
+  const relayPlan = routePlan(homeSystemId, selectedSystem.value.system.id);
+  return {
+    title: "Courier order",
+    detail: relayPlan
+      ? `1 pigeon from ${translateSystemId(homeSystemId)} to ${selectedSystem.value.system.name} (${relayPlan.travelDays} days, 1 salt).`
+      : `1 pigeon from ${translateSystemId(homeSystemId)} to ${selectedSystem.value.system.name} (route unresolved).`,
+  };
+});
+
 const feedItems = computed(() => {
   if (!currentSeat.value || !result.value) {
     return [];
@@ -494,31 +523,41 @@ const orderBrief = computed(() => {
   const destinationId = orderDraft.value.destinationId ?? destinationOptions.value[0]?.value ?? null;
   const destinationName = destinationId ? translateSystemId(destinationId) : "No destination";
   const plan = destinationId ? routePlan(system.id, destinationId) : null;
+  const relayLine = commandRelay.value ? `${commandRelay.value.title}: ${commandRelay.value.detail}` : null;
 
-  if (activeAction.value === "send_pigeon") {
-    return {
-      title: "Courier Dispatch",
-      lines: [
-        `${system.name} to ${destinationName}`,
-        `Transit estimate: ${plan?.travelDays ?? "?"} days`,
-        "Cost: 1 salt",
-        "A low-friction way to move intent or logistics updates.",
-      ],
-    };
-  }
-
-  if (activeAction.value === "launch_fleet") {
+  if (activeAction.value === "attack" || activeAction.value === "reinforce") {
     const ships = Number(orderDraft.value.ships || 1);
     const burn = plan ? requiredBurnSalt(ships, 0, 0, plan.distance) : null;
     return {
-      title: "Fleet Launch",
+      title: activeAction.value === "attack" ? "Attack Order" : "Reinforcement Order",
       lines: [
         `${ships} ships toward ${destinationName}`,
-        `Mission: ${titleCase(orderDraft.value.mission)}`,
-        `Transit estimate: ${plan?.travelDays ?? "?"} days`,
-        `Projected burn cost: ${burn ?? "?"} salt`,
-        `Post-launch local salt: ${Math.max(0, snapshot.saltStockpile - (burn ?? 0))}`,
-      ],
+        activeAction.value === "attack"
+          ? "Intent: force a fight and pressure local control."
+          : "Intent: strengthen a friendly position before contact.",
+        `Transit estimate: ${plan ? `${plan.travelDays} days` : "No route"}`,
+        `Projected burn cost: ${burn !== null ? `${burn} salt` : "Route required"}`,
+        burn !== null
+          ? `Post-launch local salt: ${Math.max(0, snapshot.saltStockpile - burn)}`
+          : "Post-launch local salt: unresolved until a route exists.",
+        relayLine,
+      ].filter(Boolean),
+    };
+  }
+
+  if (activeAction.value === "resupply") {
+    const ships = Number(orderDraft.value.ships || 1);
+    const burn = plan ? requiredBurnSalt(ships, 0, 0, plan.distance) : null;
+    return {
+      title: "Resupply Order",
+      lines: [
+        `${ships} ships escort supplies toward ${destinationName}`,
+        `Cargo priority: ${titleCase(orderDraft.value.resupplyFocus)}`,
+        `Transit estimate: ${plan ? `${plan.travelDays} days` : "No route"}`,
+        `Escort burn cost: ${burn !== null ? `${burn} salt` : "Route required"}`,
+        "Supply mass will expand in a later draft; this preview prices the escort first.",
+        relayLine,
+      ].filter(Boolean),
     };
   }
 
@@ -532,7 +571,8 @@ const orderBrief = computed(() => {
         `Travel time: ${anchorPlan?.travelDays ?? 0} days`,
         "Cost: 2 salt and 2 metals",
         "Probes narrow uncertainty around approach lanes and turns.",
-      ],
+        relayLine,
+      ].filter(Boolean),
     };
   }
 
@@ -541,9 +581,10 @@ const orderBrief = computed(() => {
     lines: [
       `${system.name} to ${destinationName}`,
       `Cargo priority: ${titleCase(orderDraft.value.tradeFocus)}`,
-      `Transit estimate: ${plan?.travelDays ?? "?"} days`,
+      `Transit estimate: ${plan ? `${plan.travelDays} days` : "No route"}`,
       `Local production: ${STAR_OUTPUT[system.starType]} salt / ${METAL_OUTPUT[system.metalRichness]} metals per day`,
-    ],
+      relayLine,
+    ].filter(Boolean),
   };
 });
 
@@ -590,6 +631,41 @@ function chooseDefaultSeatId() {
     ?.id;
 }
 
+function setSystemNode(systemId, element) {
+  if (element) {
+    systemNodes.set(systemId, element);
+  } else {
+    systemNodes.delete(systemId);
+  }
+}
+
+function centerMapOnSystem(systemId) {
+  const node = systemNodes.get(systemId);
+  if (node?.scrollIntoView) {
+    node.scrollIntoView({ block: "center", inline: "center" });
+  }
+
+  const viewport = mapViewport.value;
+  const point = mapLayout.value.get(systemId);
+  if (!viewport || !point) {
+    return;
+  }
+
+  const left = Math.max(
+    0,
+    Math.min(point.x - viewport.clientWidth / 2, viewport.scrollWidth - viewport.clientWidth),
+  );
+  const top = Math.max(
+    0,
+    Math.min(point.y - viewport.clientHeight / 2, viewport.scrollHeight - viewport.clientHeight),
+  );
+
+  window.requestAnimationFrame(() => {
+    viewport.scrollLeft = left;
+    viewport.scrollTop = top;
+  });
+}
+
 async function loadScenario(id) {
   const response = await fetch(`/api/scenarios/${encodeURIComponent(id)}`);
   if (!response.ok) {
@@ -608,6 +684,7 @@ async function loadScenario(id) {
 
   scenario.value = loadedScenario;
   result.value = await simulationResponse.json();
+  mapCenteredOnce.value = false;
   seatFactionId.value = chooseDefaultSeatId();
   selectedSystemId.value =
     scenario.value.factions.find((faction) => faction.id === seatFactionId.value)?.homeSystemId
@@ -617,7 +694,24 @@ async function loadScenario(id) {
 
 function selectSystem(systemId) {
   selectedSystemId.value = systemId;
+  window.setTimeout(() => centerMapOnSystem(systemId), 40);
 }
+
+watch(
+  selectedSystemId,
+  async (systemId) => {
+    if (!systemId) {
+      return;
+    }
+
+    await nextTick();
+    window.requestAnimationFrame(() => {
+      centerMapOnSystem(systemId);
+      mapCenteredOnce.value = true;
+    });
+  },
+  { flush: "post" },
+);
 
 onMounted(async () => {
   try {
@@ -706,7 +800,7 @@ onMounted(async () => {
         </div>
 
         <div class="map-stage">
-          <div class="map-viewport">
+          <div ref="mapViewport" class="map-viewport">
             <svg
               :viewBox="`0 0 ${mapCanvas.width} ${mapCanvas.height}`"
               class="galaxy-map"
@@ -726,6 +820,7 @@ onMounted(async () => {
               <g
                 v-for="system in scenario?.systems ?? []"
                 :key="system.id"
+                :ref="(element) => setSystemNode(system.id, element)"
                 class="system-group"
                 :transform="`translate(${mapLayout.get(system.id)?.x ?? 0} ${mapLayout.get(system.id)?.y ?? 0})`"
                 @click.stop="selectSystem(system.id)"
@@ -799,7 +894,7 @@ onMounted(async () => {
             <div class="panel-title">Immediate Action</div>
           </div>
           <Tag :severity="selectedSystemFriendly ? 'success' : 'secondary'" rounded>
-            {{ selectedSystemFriendly ? "Ready to draft" : "Select a friendly system" }}
+            {{ selectedSystemFriendly ? "Ready to order" : "Select a friendly system" }}
           </Tag>
         </div>
       </div>
@@ -824,17 +919,7 @@ onMounted(async () => {
                 <Select v-model="orderDraft.destinationId" :options="destinationOptions" option-label="label" option-value="value" fluid />
               </div>
 
-              <div v-if="activeAction === 'send_pigeon'" class="field">
-                <label>Packet</label>
-                <Select v-model="orderDraft.packetType" :options="['intel', 'orders', 'logistics', 'diplomatic']" fluid />
-              </div>
-
-              <div v-if="activeAction === 'launch_fleet'" class="field">
-                <label>Mission</label>
-                <Select v-model="orderDraft.mission" :options="['attack', 'reinforce', 'resupply', 'trade']" fluid />
-              </div>
-
-              <div v-if="activeAction === 'launch_fleet'" class="field">
+              <div v-if="['attack', 'reinforce', 'resupply'].includes(activeAction)" class="field">
                 <label>Ships</label>
                 <InputNumber
                   v-model="orderDraft.ships"
@@ -843,6 +928,11 @@ onMounted(async () => {
                   show-buttons
                   fluid
                 />
+              </div>
+
+              <div v-if="activeAction === 'resupply'" class="field">
+                <label>Cargo</label>
+                <Select v-model="orderDraft.resupplyFocus" :options="['salt', 'metals']" fluid />
               </div>
 
               <div v-if="activeAction === 'deploy_probe'" class="field">
