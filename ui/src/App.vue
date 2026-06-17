@@ -63,6 +63,48 @@ function sentenceCase(value) {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+function formatTravelSpan(days) {
+  if (!Number.isFinite(days) || days <= 0) {
+    return "less than a day";
+  }
+
+  if (days < 30) {
+    return `${days} ${days === 1 ? "day" : "days"}`;
+  }
+
+  const years = Math.floor(days / 360);
+  const months = Math.floor((days % 360) / 30);
+  const remainingDays = days % 30;
+  const parts = [];
+
+  if (years > 0) {
+    parts.push(`${years} ${years === 1 ? "year" : "years"}`);
+  }
+  if (months > 0) {
+    parts.push(`${months} ${months === 1 ? "month" : "months"}`);
+  }
+  if (parts.length === 0 || (parts.length < 2 && remainingDays > 0 && years === 0)) {
+    parts.push(`${remainingDays} ${remainingDays === 1 ? "day" : "days"}`);
+  }
+
+  return parts.slice(0, 2).join(" and ");
+}
+
+function formatMissionNarrative(mission) {
+  switch (mission) {
+    case "attack":
+      return "on an attack mission";
+    case "reinforce":
+      return "on a reinforcement mission";
+    case "resupply":
+      return "on a resupply mission";
+    case "trade":
+      return "on a trade mission";
+    default:
+      return "";
+  }
+}
+
 function latestSnapshot() {
   return result.value?.snapshots?.[result.value.snapshots.length - 1] ?? null;
 }
@@ -164,6 +206,10 @@ function requiredBurnSalt(ships, cargoSalt, metals, distance) {
 
 function translateSystemId(systemId) {
   return systemsMap().get(systemId)?.name ?? systemId;
+}
+
+function translateFactionId(factionId) {
+  return scenario.value?.factions.find((faction) => faction.id === factionId)?.name ?? titleCase(factionId);
 }
 
 function parseLogEntry(line) {
@@ -271,8 +317,6 @@ const summaryCards = computed(() => {
     { label: "Contested", value: formatNumber(contested) },
   ];
 });
-
-const visibleFeedItems = computed(() => feedItems.value.slice(0, 7));
 
 const mapLayout = computed(() => {
   if (!currentSeat.value || !scenario.value) {
@@ -410,14 +454,91 @@ const feedItems = computed(() => {
 
   const relevantSystemIds = new Set(ownedSystems.value.map((system) => system.id));
   relevantSystemIds.add(currentSeat.value.faction.homeSystemId);
+  for (const systemId of [...relevantSystemIds]) {
+    for (const route of neighboringRoutes(systemId)) {
+      relevantSystemIds.add(route.a === systemId ? route.b : route.a);
+    }
+  }
+
+  const snapshots = result.value.snapshots ?? [];
+  const snapshotIndex = new Map(snapshots.map((snapshot) => [snapshot.date, snapshot]));
+  const firstFleetSnapshot = (fleetId, date) => {
+    const startIndex = Math.max(
+      0,
+      snapshots.findIndex((snapshot) => snapshot.date >= date),
+    );
+    for (let index = startIndex; index < snapshots.length; index += 1) {
+      const fleet = snapshots[index]?.fleets?.[fleetId];
+      if (fleet) {
+        return fleet;
+      }
+    }
+    return null;
+  };
+  const systemViewAt = (systemId, date) => snapshotIndex.get(date)?.systems?.[systemId] ?? null;
+  const classifyLaunch = (factionId, destinationId, mission, date) => {
+    const destinationView = systemViewAt(destinationId, date);
+    const destinationOwnerId = destinationView?.ownerId ?? null;
+    const destinationOwnerName = destinationOwnerId ? translateFactionId(destinationOwnerId) : null;
+
+    if (mission === "trade") {
+      return {
+        kicker: "Trade signal",
+        analysis: `${translateFactionId(factionId)} is moving cargo toward ${translateSystemId(destinationId)} for exchange or stockpile transfer.`,
+      };
+    }
+
+    if (mission === "resupply") {
+      return {
+        kicker: "Supply convoy",
+        analysis: `${translateFactionId(factionId)} is strengthening endurance at ${translateSystemId(destinationId)} rather than looking for a decisive fight.`,
+      };
+    }
+
+    if (destinationOwnerId === factionId) {
+      return {
+        kicker: "Reinforcement burn",
+        analysis: `${translateFactionId(factionId)} is reinforcing a friendly system and preparing for future contact.`,
+      };
+    }
+
+    if (!destinationOwnerId) {
+      return {
+        kicker: "Expansion burn",
+        analysis: `${translateFactionId(factionId)} is likely trying to claim an open system before a rival can establish control.`,
+      };
+    }
+
+    if (destinationOwnerId === currentSeat.value.faction.id) {
+      return {
+        kicker: "Incoming threat",
+        analysis: `${translateFactionId(factionId)} is attacking our position at ${translateSystemId(destinationId)} and likely intends to seize the system.`,
+      };
+    }
+
+    return {
+      kicker: "Attack burn",
+      analysis: `${translateFactionId(factionId)} is attacking ${destinationOwnerName} at ${translateSystemId(destinationId)} and likely intends to take the system.`,
+    };
+  };
   const items = [];
 
   for (const line of [...result.value.log].reverse()) {
     const parsed = parseLogEntry(line);
-    if (!parsed || parsed.detail.includes(" produced ")) {
+    if (
+      !parsed ||
+      parsed.detail.includes(" produced ") ||
+      parsed.detail.includes(" queued ") ||
+      parsed.detail.includes(" sent pigeon ") ||
+      parsed.detail.includes(" delivered to ") ||
+      parsed.detail.includes("report ") ||
+      parsed.detail.includes(" failed to turn ") ||
+      parsed.detail.includes(" turned toward ") ||
+      parsed.detail.includes(" unloaded friendly cargo ") ||
+      parsed.detail.includes(" traded at ")
+    ) {
       continue;
     }
-
     const detail = parsed.detail;
     const involvesSeat =
       detail.includes(`${currentSeat.value.faction.id} `) ||
@@ -431,22 +552,50 @@ const feedItems = computed(() => {
 
     const launchMatch = detail.match(/^(\w+) launched (\S+) from (\S+) to (\S+)$/u);
     if (launchMatch) {
+      const fleet = firstFleetSnapshot(launchMatch[2], parsed.date);
+      const plan = routePlan(launchMatch[3], launchMatch[4]);
+      const launchClassification = classifyLaunch(
+        launchMatch[1],
+        launchMatch[4],
+        fleet?.mission ?? null,
+        parsed.date,
+      );
       item = {
         date: parsed.date,
-        title: `${translateSystemId(launchMatch[3])} reported a departure burn`,
-        summary: `${titleCase(launchMatch[1])} launched a fleet toward ${translateSystemId(launchMatch[4])}.`,
-        impact: `Likely arrival in ${routePlan(launchMatch[3], launchMatch[4])?.travelDays ?? "?"} days.`,
-        tone: launchMatch[1] === currentSeat.value.faction.id ? "info" : "warn",
+        kicker: launchClassification.kicker,
+        title: `${translateFactionId(launchMatch[1])} launched ${fleet?.ships ?? "?"} ships toward ${translateSystemId(launchMatch[4])}`,
+        summary: `${translateFactionId(launchMatch[1])} departed ${translateSystemId(launchMatch[3])} for ${translateSystemId(launchMatch[4])}. Expected arrival in ${formatTravelSpan(plan?.travelDays ?? 0)}.`,
+        analysis: launchClassification.analysis,
+        tone:
+          launchMatch[4] === currentSeat.value.faction.homeSystemId || relevantSystemIds.has(launchMatch[4])
+            ? "danger"
+            : launchMatch[1] === currentSeat.value.faction.id
+              ? "info"
+              : "warn",
       };
     }
 
     const combatMatch = detail.match(/^combat at (\S+); attacker (\w+) lost (\d+), defender (\w+) lost (\d+)$/u);
     if (!item && combatMatch) {
+      const systemView = systemViewAt(combatMatch[1], parsed.date);
+      const attackerLosses = Number(combatMatch[3]);
+      const defenderLosses = Number(combatMatch[5]);
+      let analysis = `${translateSystemId(combatMatch[1])} is still contested.`;
+      if (systemView?.ownerId === combatMatch[4]) {
+        analysis = `${translateFactionId(combatMatch[4])} likely held the field, but more pressure could still flip control.`;
+      } else if (systemView?.ownerId === combatMatch[2]) {
+        analysis = `${translateFactionId(combatMatch[2])} appears to have broken local resistance and may be close to capture.`;
+      } else if (attackerLosses > defenderLosses) {
+        analysis = `${translateFactionId(combatMatch[2])} paid more for the attack and may need reinforcements before trying again.`;
+      } else if (defenderLosses > attackerLosses) {
+        analysis = `${translateFactionId(combatMatch[2])} damaged the defense and may follow with a capture attempt.`;
+      }
       item = {
         date: parsed.date,
-        title: `${translateSystemId(combatMatch[1])} saw combat`,
-        summary: `Attacker losses ${combatMatch[3]}. Defender losses ${combatMatch[5]}.`,
-        impact: "Local control may now be unstable.",
+        kicker: "Battle report",
+        title: `Fighting at ${translateSystemId(combatMatch[1])}`,
+        summary: `${translateFactionId(combatMatch[2])} lost ${combatMatch[3]} ships. ${translateFactionId(combatMatch[4])} lost ${combatMatch[5]} ships.`,
+        analysis,
         tone: relevantSystemIds.has(combatMatch[1]) ? "danger" : "warn",
       };
     }
@@ -455,43 +604,51 @@ const feedItems = computed(() => {
     if (!item && captureMatch) {
       item = {
         date: parsed.date,
+        kicker: "Control shift",
         title: `${translateSystemId(captureMatch[2])} changed hands`,
-        summary: `${titleCase(captureMatch[1])} completed a capture.`,
-        impact: "Production and control now benefit the new owner.",
+        summary: `${translateFactionId(captureMatch[1])} completed the takeover of ${translateSystemId(captureMatch[2])}.`,
+        analysis:
+          captureMatch[1] === currentSeat.value.faction.id
+            ? `${translateSystemId(captureMatch[2])} now feeds our economy, but the new control window is still vulnerable to immediate counterattack.`
+            : `${translateSystemId(captureMatch[2])} now pays salt and metals to ${translateFactionId(captureMatch[1])}. A fast counterattack can still matter if the grip is new.`,
         tone: captureMatch[1] === currentSeat.value.faction.id ? "success" : "danger",
+      };
+    }
+
+    const claimMatch = detail.match(/^(\w+) claimed open system (\S+)$/u);
+    if (!item && claimMatch) {
+      item = {
+        date: parsed.date,
+        kicker: "Frontier claim",
+        title: `${translateFactionId(claimMatch[1])} secured ${translateSystemId(claimMatch[2])}`,
+        summary: `${translateSystemId(claimMatch[2])} was open and has now entered ${translateFactionId(claimMatch[1])}'s network.`,
+        analysis: "Unchecked frontier growth compounds quickly because the new system starts generating salt immediately.",
+        tone: claimMatch[1] === currentSeat.value.faction.id ? "success" : "warn",
       };
     }
 
     const arrivalMatch = detail.match(/^fleet (\S+) arrived at (\S+)$/u);
     if (!item && arrivalMatch) {
+      const fleet = firstFleetSnapshot(arrivalMatch[1], parsed.date);
+      const destinationView = systemViewAt(arrivalMatch[2], parsed.date);
+      const isHostileArrival =
+        fleet?.factionId &&
+        destinationView?.ownerId &&
+        fleet.factionId !== destinationView.ownerId;
       item = {
         date: parsed.date,
-        title: `${translateSystemId(arrivalMatch[2])} received a fleet`,
-        summary: "A new force reached orbit.",
-        impact: "Inspect the map for immediate force balance changes.",
-        tone: relevantSystemIds.has(arrivalMatch[2]) ? "warn" : "info",
-      };
-    }
-
-    const pigeonMatch = detail.match(/^(\w+) sent pigeon (\S+) to (\S+)$/u);
-    if (!item && pigeonMatch) {
-      item = {
-        date: parsed.date,
-        title: `Courier launched for ${translateSystemId(pigeonMatch[3])}`,
-        summary: `${titleCase(pigeonMatch[1])} spent salt to move information.`,
-        impact: "Intel and orders are now physically in transit.",
-        tone: "contrast",
+        kicker: "Arrival burn",
+        title: `${translateSystemId(arrivalMatch[2])} received ${fleet?.ships ?? "?"} ships`,
+        summary: `${translateFactionId(fleet?.factionId ?? "unknown")} reached ${translateSystemId(arrivalMatch[2])}${fleet?.mission ? ` ${formatMissionNarrative(fleet.mission)}` : ""}.`,
+        analysis: isHostileArrival
+          ? `This arrival threatens local control immediately if the defender cannot match the landing force.`
+          : `This movement changes local force balance even if it does not produce combat right away.`,
+        tone: relevantSystemIds.has(arrivalMatch[2]) || isHostileArrival ? "warn" : "info",
       };
     }
 
     if (!item) {
-      item = {
-        date: parsed.date,
-        title: sentenceCase(detail),
-        summary: "A relevant theater event occurred.",
-        impact: "Review the map before committing new orders.",
-        tone: "secondary",
-      };
+      continue;
     }
 
     items.push(item);
@@ -858,18 +1015,19 @@ onMounted(async () => {
         </div>
 
         <div class="feed-scroll">
-          <article v-for="(item, index) in visibleFeedItems" :key="`${item.date}-${index}`" class="feed-card">
+          <article
+            v-for="(item, index) in feedItems"
+            :key="`${item.date}-${index}`"
+            :class="['feed-card', `feed-tone-${item.tone}`]"
+          >
             <div class="feed-card-top">
+              <div class="feed-kicker">{{ item.kicker }}</div>
               <Tag :severity="item.tone" rounded>{{ item.date }}</Tag>
             </div>
             <div class="feed-title">{{ item.title }}</div>
             <p class="feed-copy">{{ item.summary }}</p>
-            <p class="feed-impact">{{ item.impact }}</p>
+            <p class="feed-impact"><span>Analysis:</span> {{ item.analysis }}</p>
           </article>
-
-          <div v-if="feedItems.length > visibleFeedItems.length" class="feed-backlog">
-            +{{ feedItems.length - visibleFeedItems.length }} older reports in backlog
-          </div>
         </div>
       </aside>
     </main>
