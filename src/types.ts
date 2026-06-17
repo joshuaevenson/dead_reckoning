@@ -4,9 +4,11 @@ export type StarType =
   | "white_blue_star"
   | "giant_or_exotic";
 
+export type SaltProfile = "none" | "trace" | "productive" | "major";
+
 export type MetalRichness = "poor" | "standard" | "rich" | "exceptional";
 
-export type Mission = "attack" | "reinforce" | "resupply" | "trade";
+export type Mission = "attack" | "reinforce" | "resupply" | "trade" | "blockade";
 
 export type FleetAction = "engage" | "hold" | "retreat" | "resupply";
 
@@ -33,6 +35,11 @@ export type CommanderProfileKind =
   | "chatty_frontier"
   | "napoleonic"
   | "bad_commander";
+
+export interface SystemPosition {
+  x: number;
+  y: number;
+}
 
 export interface RouteDefinition {
   id: string;
@@ -81,6 +88,11 @@ export interface FleetState {
   routeDistanceRemaining: number;
   routeTravelDaysRemaining: number;
   routeHeading?: string;
+  usesStarlane?: boolean;
+  travelSegmentIds?: string[];
+  travelPathSystemIds?: string[];
+  interceptedCombatDaysRemaining?: number;
+  interceptedByFactionId?: string;
   retreatSystemId?: string;
   rules: FleetRule[];
   tradeOrder?: FleetOrder;
@@ -91,10 +103,13 @@ export interface ProbeState {
   id: string;
   factionId: string;
   status: "transit" | "deployed" | "destroyed";
+  originSystemId: string;
   currentSystemId?: string;
   anchorSystemId: string;
   arrivalDate?: string;
   watchedRouteId?: string;
+  watchedStarlaneId?: string;
+  watchedCorridorSystemId?: string;
   watchedSystemApproachId?: string;
   reportDestinationSystemId: string;
   reportSaltReserve: number;
@@ -153,8 +168,11 @@ export interface BuildOrder {
 export interface SystemDefinition {
   id: string;
   name: string;
+  position: SystemPosition;
   starType: StarType;
+  saltProfile?: SaltProfile;
   metalRichness: MetalRichness;
+  starlaneLinks?: string[];
   ownerId: string | null;
   saltStockpile: number;
   metalStockpile: number;
@@ -235,6 +253,8 @@ export interface DeployProbeCommand {
   anchorSystemId: string;
   reportDestinationSystemId: string;
   watchedRouteId?: string;
+  watchedStarlaneId?: string;
+  watchedCorridorSystemId?: string;
   watchedSystemApproachId?: string;
   reportSaltReserve?: number;
   name?: string;
@@ -300,7 +320,7 @@ export interface ScenarioDefinition {
   commanderProfiles?: CommanderProfileDefinition[];
   factions: FactionDefinition[];
   systems: SystemDefinition[];
-  routes: RouteDefinition[];
+  routes?: RouteDefinition[];
   fleets?: InitialFleetDefinition[];
   initialReports?: InitialReportDefinition[];
   commands?: ScenarioCommand[];
@@ -326,14 +346,21 @@ export interface SnapshotFleetView {
   cargoSalt: number;
   metals: number;
   mission: Mission;
+  usesStarlane?: boolean;
+  interceptedCombatDaysRemaining?: number;
+  interceptedByFactionId?: string;
 }
 
 export interface SnapshotProbeView {
   factionId: string;
   status: ProbeState["status"];
+  originSystemId?: string;
   currentSystemId?: string;
   anchorSystemId: string;
+  arrivalDate?: string;
   watchedRouteId?: string;
+  watchedStarlaneId?: string;
+  watchedCorridorSystemId?: string;
   watchedSystemApproachId?: string;
 }
 

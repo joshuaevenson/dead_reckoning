@@ -66,6 +66,7 @@
     {
       "id": "n_home",
       "name": "Napoleon Home",
+      "position": { "x": 0, "y": 0 },
       "starType": "yellow_star",
       "metalRichness": "standard",
       "ownerId": "napoleon",
@@ -81,6 +82,7 @@
     {
       "id": "b_home",
       "name": "Bad Home",
+      "position": { "x": 2, "y": 0 },
       "starType": "yellow_star",
       "metalRichness": "standard",
       "ownerId": "bad",
@@ -96,6 +98,7 @@
     {
       "id": "fork",
       "name": "Fork",
+      "position": { "x": 1, "y": 0 },
       "starType": "red_dwarf",
       "metalRichness": "poor",
       "ownerId": null,
@@ -108,6 +111,7 @@
     {
       "id": "west",
       "name": "West Gate",
+      "position": { "x": 2, "y": 1.5 },
       "starType": "yellow_star",
       "metalRichness": "rich",
       "ownerId": "bad",
@@ -123,6 +127,7 @@
     {
       "id": "east",
       "name": "East Gate",
+      "position": { "x": 2, "y": -1.5 },
       "starType": "yellow_star",
       "metalRichness": "standard",
       "ownerId": "bad",

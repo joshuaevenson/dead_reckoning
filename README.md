@@ -6,9 +6,161 @@ The repo now includes a browser command table for driving the simulator against 
 
 * Run `npm run dev`
 * Open `http://localhost:8787`
-* Choose a bundled scenario, edit the JSON if needed, and run the simulation
+* Choose a bundled test scenario, edit the JSON if needed, and run the simulation
 
 This local server uses the compiled worker for `/api/*` routes and serves the static UI from [`public/`](/Users/joshuaevenson/Documents/GitHub/dead_reckoning/public). For Cloudflare deployment, [`wrangler.jsonc`](/Users/joshuaevenson/Documents/GitHub/dead_reckoning/wrangler.jsonc) is configured to serve the same static assets.
+
+## Locked State Schema
+
+This section defines the canonical game state shape for the real game. Any change to this schema should be discussed before implementation.
+
+### Non-state
+
+These are not persisted game state:
+
+* Test scenarios. These exist only for simulation and balance testing.
+* Star catalog data such as star names, coordinates, star type, salt profile, metal richness, and optional starlane links.
+* Travel formulas, salt-cost formulas, and time-conversion rules.
+* Browser UI state such as selected system, open panel, draft order, or local clock display.
+* Rendered text such as feed summaries, ETA strings, and top-bar labels.
+
+### Static Universe Catalog
+
+The game uses a fixed catalog of nearby real star systems. This catalog is static data, not mutable world state.
+
+Each system in the catalog provides:
+
+* `id`
+* `name`
+* `position`
+* `star_type`
+* `salt_profile`
+* `metal_richness`
+* optional `starlane_links[]`
+
+From this static data we derive:
+
+* direct distance between systems
+* optional starlane-assisted travel plans
+* fleet travel time
+* pigeon travel time
+* salt movement cost
+
+There are no persisted route records. Direct travel and optional starlane travel are both derived from the static catalog.
+
+### Canonical Persisted World State
+
+There is one shared world for everyone. The persisted state is only the mutable world:
+
+* `players`
+* `systems`
+* `fleets`
+* `probes`
+* `pigeons`
+* `reports`
+
+#### Players
+
+Each player stores:
+
+* `id`
+* `name`
+* `home_system_id`
+
+#### Systems
+
+Each system stores only mutable control and resource state:
+
+* `system_id`
+* `owner_id`
+* `defense`
+* `salt`
+* `metals`
+* `control_since_ms`
+* `updated_at_ms`
+* optional active `capture`
+
+The important rule is that stars themselves are static, while ownership and stored resources are dynamic.
+
+#### Fleets
+
+Each fleet stores:
+
+* `id`
+* `owner_id`
+* `origin_system_id`
+* `destination_system_id`
+* `launched_at_ms`
+* `arrival_at_ms`
+* `ships`
+* `cargo_salt`
+* `cargo_metals`
+* `mission`
+
+#### Probes
+
+Each probe stores:
+
+* `id`
+* `owner_id`
+* `origin_system_id`
+* `target_system_id`
+* `launched_at_ms`
+* `arrival_at_ms`
+* `status`
+
+#### Pigeons
+
+Each pigeon stores:
+
+* `id`
+* `owner_id`
+* `origin_system_id`
+* `destination_system_id`
+* `launched_at_ms`
+* `arrival_at_ms`
+* `packets`
+
+#### Reports
+
+Reports are the canonical player-intelligence record.
+
+Each report stores:
+
+* `id`
+* `recipient_player_id`
+* `created_at_ms`
+* `delivered_at_ms`
+* `kind`
+* optional `system_id`
+* optional `fleet_id`
+* `payload`
+
+### Derived, Not Stored
+
+These must be derived from canonical state rather than persisted directly:
+
+* `Launch Probe`
+* `Probe arrives in X years Y months`
+* top summary metrics
+* feed cards
+* fleet ETA text
+* salt output projections
+* player-visible knowledge summaries
+* whether a system is currently under siege
+* whether a system is currently blockading nearby starlanes
+* whether a side currently has a flank advantage in an active battle
+
+### Knowledge Rule
+
+The game stores world truth and delivered reports. Player-facing knowledge is derived from:
+
+* owned systems
+* delivered reports
+* active probes
+* visible telescope events
+
+The UI should not invent a separate long-lived truth model when the underlying world state and delivered reports already define what the player knows.
 
 ## Core Concept
 
@@ -114,7 +266,7 @@ Step 4 — Strategic Adjustment
 Each system contains:
 
 * star type
-* salt output
+* salt potential, which may be zero
 * metal richness
 * salt stockpile
 * metal stockpile
@@ -122,6 +274,7 @@ Each system contains:
 * infrastructure
 * ownership (faction-based)
 * local fleets and defenses
+* optional strategic position on one or more starlanes
 
 4.2 Ownership
 
@@ -132,7 +285,10 @@ Each system contains:
 
 4.3 Distance & Travel
 
-* Space is a weighted graph of star systems (light-speed constrained)
+* Space is open: fleets may always travel directly from one known system to another
+* Optional starlanes connect some systems
+* Starlane travel is faster and cheaper than direct travel
+* Because starlanes pass through intermediate systems, they create natural waypoint, blockade, and interception objectives
 * Travel:
     * takes real in-game time
     * is pre-scheduled and immutable unless conditional logic applies
@@ -570,7 +726,7 @@ Conquest determines when ownership of a star system changes hands. Ownership doe
     * the attacker has ships or defense present
     * the defender does not have enough remaining force to contest control
 * A token force is not enough to delay conquest indefinitely
-* The exact contest threshold is defined in section `21.5 Meaningful Control`
+* The exact contest threshold is defined in section `21.7 Meaningful Control`
 
 16.5 Capture Duration
 
@@ -637,16 +793,23 @@ Use `1 salt = 1 Pigeon launch` as the baseline unit for the whole logistics mode
     * players cannot afford unlimited messages
     * moving fleets is much more expensive than sending information
 
-17.3 Fleet Mass and Movement Cost
+17.3 Fleet Mass and Travel Plans
 
-For the first implementation, separate route timing from salt cost.
+For the first implementation, separate travel geometry from salt cost.
 
-Each route has:
+Each fleet uses a derived travel plan made of one or more segments.
 
-* `route_distance`
-* `route_travel_time_days`
+Each segment has:
 
-`route_distance` determines salt cost. `route_travel_time_days` determines arrival time.
+* `segment_distance`
+* `segment_mode`
+
+Where:
+
+* `segment_mode = direct` means open-space travel between any two systems
+* `segment_mode = starlane` means travel along a static lane link between two connected systems
+
+Direct travel is always allowed. Starlanes are optional but strategically attractive because they are faster and cheaper.
 
 To avoid recursive fuel-mass math in the first implementation:
 
@@ -662,18 +825,27 @@ ship_mass = 5
 metal_mass = fleet.metals
 cargo_salt_mass = ceil(fleet.cargo_salt / 4)
 
+direct_time_multiplier = 1.00
+direct_salt_multiplier = 1.00
+starlane_time_multiplier = 0.70
+starlane_salt_multiplier = 0.80
+
 fleet_dry_mass = fleet.ships * ship_mass
 fleet_cargo_mass = metal_mass + cargo_salt_mass
 effective_mass = fleet_dry_mass + fleet_cargo_mass
 
-required_burn_salt = ceil(route_distance * effective_mass)
-travel_time_days = route_travel_time_days
+segment_burn_salt = ceil(segment_distance * effective_mass * segment_salt_multiplier)
+segment_travel_time_days = ceil(segment_distance * segment_time_multiplier)
+
+required_burn_salt = sum(segment_burn_salt for all segments)
+travel_time_days = sum(segment_travel_time_days for all segments)
 ```
 
 Where:
 
-* `route_distance` is the path length in normalized interstellar travel units
-* `route_travel_time_days` is the precomputed travel time of the path
+* `segment_distance` is the segment length in normalized interstellar travel units
+* `segment_time_multiplier` is determined by `segment_mode`
+* `segment_salt_multiplier` is determined by `segment_mode`
 * each ship contributes `5` mass
 * each `1 metal` contributes `1` mass
 * each `4 salt` carried contributes `1` mass
@@ -683,6 +855,8 @@ This creates a useful baseline:
 * `1` ship moving `1` distance costs `5 salt`
 * `4` ships moving `2` distance costs `40 salt`
 * carrying extra salt forward makes future movement easier but current movement more expensive
+* a starlane route is usually preferred when speed and fuel efficiency matter
+* a direct route is usually preferred when secrecy or lane avoidance matters
 
 17.4 Launch Requirement
 
@@ -713,7 +887,7 @@ Fleets may alter course in transit by spending additional salt.
 Define:
 
 ```text
-remaining_burn_salt = ceil(remaining_route_distance * effective_mass)
+remaining_burn_salt = sum(remaining_segment_burn_salt)
 course_change_penalty = max(2, ceil(0.25 * remaining_burn_salt))
 turn_allowed = fleet.burn_salt_remaining >= remaining_burn_salt + course_change_penalty
 ```
@@ -721,27 +895,49 @@ turn_allowed = fleet.burn_salt_remaining >= remaining_burn_salt + course_change_
 When a fleet turns:
 
 * `course_change_penalty` is consumed immediately
-* a new `remaining_burn_salt` is computed from the new route
+* a new `remaining_burn_salt` is computed from the new travel plan
 * telescope observers do not automatically see the turn
 * only probes or later arrival burns reveal the new path
 
-17.7 Resupply
+17.7 Starlane Control and Blockade
+
+Starlanes are optional, but they become natural campaign objectives because they are efficient and observable.
+
+For the first implementation:
+
+* a fleet stationed in a system may take a `blockade` mission against one or more connected starlane segments
+* enemy fleets may still avoid the blockade by going off-lane, but doing so is slower and more expensive
+* a blockading fleet creates a strong threat of interception against fleets that try to continue through the watched lane
+* this makes intermediate systems valuable even when they are not rich in salt or metals
+
+This is the intended strategic pattern:
+
+* hold a waypoint system
+* fortify it
+* blockade the fast lane through it
+* force the enemy to choose between delay, extra salt burn, or a contested passage
+
+17.8 Resupply
 
 * Fleets resupply by drawing salt from the system they are currently in
 * A fleet may only harvest salt locally if its faction owns the system
 * If a fleet runs out of salt while inside a star system, it must wait there until it can harvest or receive more salt
 
-17.8 System Production
+17.9 System Production
 
 Systems generate salt and metals for their current owner while that owner remains in control.
 
-Baseline daily salt output by star type:
+Salt is intentionally not universal.
+
+Most systems produce no salt at all. Salt-bearing systems are rarer, and they are usually the best long-term colony worlds.
+
+Baseline daily salt output by salt profile:
 
 ```text
-red_dwarf_output = 2 salt/day
-yellow_star_output = 4 salt/day
-white_blue_star_output = 6 salt/day
-giant_or_exotic_output = 8 salt/day
+salt_none_output = 0 salt/day
+salt_trace_output = 1 salt/day
+salt_productive_output = 3 salt/day
+salt_major_output = 6 salt/day
 ```
 
 Baseline daily metal output by metal richness:
@@ -756,7 +952,7 @@ exceptional_metal_output = 6 metal/day
 Actual daily output:
 
 ```text
-daily_salt_output = round(base_star_output * salt_fluctuation)
+daily_salt_output = round(base_salt_output * salt_fluctuation)
 daily_metal_output = round(base_metal_output * metal_fluctuation)
 salt_fluctuation = random value between 0.90 and 1.10
 metal_fluctuation = random value between 0.95 and 1.05
@@ -764,26 +960,30 @@ metal_fluctuation = random value between 0.95 and 1.05
 
 This means:
 
-* a small star can support occasional fleet movement and a few routine messages
-* an average star can support regular communication and bank fuel for military use
-* a strong star becomes a major logistics hub worth fighting over
+* many systems are worth holding for position even though they cannot fuel themselves
+* a productive salt world can support routine communication and slow stockpiling
+* a major salt world becomes a true logistics hub worth fighting over
+* metal worlds and waypoint systems still matter because fleets can carry cargo salt forward
 
-17.9 Operational Baseline
+17.10 Operational Baseline
 
 These equations are meant to produce the following gameplay feel:
 
-* `1` average yellow star produces about `4 salt/day`, or about `4` Pigeon launches per day
-* a faction with `3` average systems produces about `12 salt/day`, enough for regular internal communication without making messages free
-* a `4`-ship claim fleet moving `2` distance costs about `40 salt`, or roughly `10` days of output from one average yellow star
+* `1` productive salt world produces about `3 salt/day`, enough for regular messages and slow military preparation
+* a faction with `1` productive salt world and `1` metal world can expand, but cannot launch major offensives casually
+* a `4`-ship claim fleet moving `2` direct distance costs about `40 salt`, or roughly `13` days of output from one productive salt world
+* starlanes reduce that cost and time enough to make them central campaign objectives
 * large offensives require stockpiling salt ahead of time
 
-17.10 Strategic Implications
+17.11 Strategic Implications
 
 * Salt-producing systems are strategically valuable even before considering population or industry
+* Metal-rich systems may be worth holding even when they produce no salt
+* Low-output frontier systems may still matter because they anchor probes, lane blockades, and relief operations
 * Long-distance campaigns depend on fuel supply, not just fleet size
 * Transporting fuel forward is itself a logistical commitment because fuel cargo makes fleets heavier
 
-17.11 Minimal State Variables
+17.12 Minimal State Variables
 
 Initial logistics evaluation may reference:
 
@@ -798,11 +998,12 @@ Initial logistics evaluation may reference:
 * `system.metal_stockpile`
 * `system.salt_output`
 * `system.metal_output`
-* `system.star_type`
-* `route.distance`
-* `route.travel_time_days`
+* `system.salt_profile`
+* `travel_plan.total_distance`
+* `travel_plan.travel_time_days`
+* `travel_plan.uses_starlane`
 
-17.12 Example Travel Rule
+17.13 Example Travel Rule
 
 ```text
 ship_mass = 5
@@ -811,7 +1012,7 @@ cargo_salt_mass = ceil(fleet.cargo_salt / 4)
 fleet_dry_mass = fleet.ships * ship_mass
 fleet_cargo_mass = metal_mass + cargo_salt_mass
 effective_mass = fleet_dry_mass + fleet_cargo_mass
-required_burn_salt = ceil(route.distance * effective_mass)
+required_burn_salt = sum(segment_distance * effective_mass * segment_salt_multiplier for each segment)
 total_departure_salt = required_burn_salt + fleet.cargo_salt
 
 if origin_system.salt_stockpile >= total_departure_salt:
@@ -873,7 +1074,7 @@ This means players usually know that a fleet has launched long before they know 
 
 18.5 Probes
 
-Probes are dedicated scout assets placed into specific routes, regions, or approach corridors.
+Probes are dedicated scout assets placed into specific starlanes, regions, or approach corridors.
 
 Probes are used to:
 
@@ -888,11 +1089,11 @@ For the first implementation:
 
 * a probe costs `2 salt` and `2 metals` to build and deploy
 * a probe is launched from a friendly system
-* a probe is assigned exactly one `watched_route` or `watched_system_approach`
+* a probe is assigned exactly one `watched_starlane`, `watched_corridor`, or `watched_system_approach`
 * a probe also records one `report_destination_system`
 * a probe may store an integer `report_salt_reserve`
 
-Probe travel uses the same route timing model as a Pigeon.
+Probe travel uses the same travel timing model as a Pigeon.
 
 18.7 Probe Observation
 
@@ -944,17 +1145,43 @@ Fleets may spend additional salt to alter course in transit.
 
 This allows a player to threaten multiple targets, force enemy dispersion, and then commit late.
 
-18.10 Battles Happen At Systems
+18.10 Deep-Space Interception
 
-For the first version of the game, battles happen only when fleets meet at a star system.
+Most battles still happen at star systems, but good reconnaissance may allow a fleet to intercept another fleet in deep space.
+
+For the first implementation:
+
+* interception requires enough information to predict a target corridor or starlane segment
+* a blockaded starlane is the easiest place to force interception
+* off-lane fleets are harder to find, but more vulnerable if caught
+
+An interception battle represents catching a fleet while it is still strung out on the march.
+
+Use a simple first-pass rule:
+
+```text
+intercepted_deployment_penalty = 0.25
+intercepted_penalty_duration = 2 days
+```
+
+If a fleet is intercepted:
+
+* the intercepted side suffers the deployment penalty for the first `2` combat days
+* this represents a column being surprised before it fully concentrates
+* if the fleet survives and reaches a star system later, normal system combat rules resume there
+
+18.11 Battles Usually Happen At Systems
+
+System battles remain the default and most common battle type.
 
 That means:
 
 * probes and scouting decide who understands the approach
 * fleet movement and course changes decide who threatens which system
-* battle resolution decides what happens once forces finally meet at the destination
+* starlanes decide where blockades and easy interceptions are likely
+* battle resolution decides what happens once forces finally meet
 
-18.11 Minimal State Variables
+18.12 Minimal State Variables
 
 Initial recon evaluation may reference:
 
@@ -966,12 +1193,13 @@ Initial recon evaluation may reference:
 * `report.possible_destinations[]`
 * `probe.location`
 * `probe.status`
-* `probe.watched_route`
+* `probe.watched_starlane`
+* `probe.watched_corridor`
 * `probe.report_destination_system`
 * `probe.report_salt_reserve`
 * `probe.durability`
 
-18.12 Example Frontier Fork
+18.13 Example Frontier Fork
 
 ```text
 1. Home system telescope sees a departure burn from enemy system A
@@ -1058,7 +1286,9 @@ This free information includes:
 
 * `system.star_type`
 * `system.distance`
+* `system.salt_profile`
 * `system.metal_richness`
+* whether the system sits on a visible starlane junction
 
 This is enough to tell whether a nearby system is strategically interesting before committing ships.
 
@@ -1109,18 +1339,18 @@ For the early game, nearby open systems should usually have:
 
 * no standing faction owner
 * little or no fixed defense
-* useful differences in star quality and metal richness
+* useful differences in salt potential, metal richness, and strategic position
 
 This creates a real choice between:
 
-* taking a safer low-value system quickly
-* waiting longer to reach a richer system
+* taking a safer low-value waypoint quickly
+* waiting longer to reach a richer salt or metal world
 
 20.8 Claiming An Open System
 
 Claiming an open system uses the same general control idea as conquest, but with a shorter timer.
 
-The exact claim timer is defined in section `21.6 Capture And Claim Timers`.
+The exact claim timer is defined in section `21.8 Capture And Claim Timers`.
 
 Claim progress begins when:
 
@@ -1149,9 +1379,10 @@ If the claimant loses all local force before completion, the claim fails and own
 
 A second system is valuable immediately because it can:
 
-* add daily salt production
+* add daily salt production if it is a salt-bearing world
 * add metal supply
 * act as a forward staging point for later fleets
+* become a fortified waypoint even if it produces little salt
 * receive `trade` and `resupply` missions
 
 This makes early expansion a logistics decision, not just a land grab.
@@ -1163,6 +1394,7 @@ Initial exploration and expansion rules may reference:
 * `system.owner`
 * `system.star_type`
 * `system.distance`
+* `system.salt_profile`
 * `system.metal_richness`
 * `system.ships`
 * `system.defense`
@@ -1174,9 +1406,9 @@ Initial exploration and expansion rules may reference:
 
 ```text
 1. Your home system identifies three nearby open stars
-2. Astronomy shows that one is salt-poor, one is metal-rich, and one is balanced
+2. Astronomy shows that one is a barren waypoint, one is metal-rich, and one is a productive salt world
 3. You stockpile enough salt for a small claim fleet
-4. A scout ship enters the balanced system and finds it open and lightly defended
+4. A scout ship enters the productive salt world and finds it open and lightly defended
 5. The claim fleet arrives, holds the system, and waits out the claim timer
 6. Once control flips, the new system begins producing salt for you and can support further expansion
 ```
@@ -1192,6 +1424,8 @@ Combat should feel Napoleonic in the sense that:
 * bigger force usually wins
 * concentrated force wins more often than dispersed force
 * defenders with prepared positions are hard to dislodge
+* sieges buy time for relief forces
+* flanking matters when one force pins and another arrives later
 * information and timing matter because they determine who actually arrives in strength
 
 The combat model should reward winning the campaign before the battle, not only clicking better during the battle.
@@ -1204,6 +1438,10 @@ For the first implementation, use a small number of explicit factors:
 ship_power = 1
 defense_power = 3
 hold_bonus = 0.15
+siege_drag = 0.20
+flank_bonus = 0.20
+flank_duration_days = 3
+cut_support_penalty = 0.10
 ```
 
 Define:
@@ -1218,9 +1456,24 @@ else:
   defender_effective_power = defender_base_power
 
 attacker_effective_power = attacker_base_power
+
+if system.defense > 0:
+  attacker_effective_power = attacker_effective_power * (1 - siege_drag)
+
+if attacker_received_reinforcement_after_battle_start:
+  attacker_effective_power = attacker_effective_power * (1 + flank_bonus)
+
+if defender_received_reinforcement_after_battle_start:
+  defender_effective_power = defender_effective_power * (1 + flank_bonus)
+
+if attacker_support_system_is_blockaded:
+  attacker_effective_power = attacker_effective_power * (1 - cut_support_penalty)
+
+if defender_support_system_is_blockaded:
+  defender_effective_power = defender_effective_power * (1 - cut_support_penalty)
 ```
 
-This keeps the model simple while making fixed defenses matter and giving the current holder a modest advantage.
+This keeps the model simple while making fixed defenses matter, giving the current holder a modest advantage, and rewarding the classic pin-and-flank pattern.
 
 21.3 Combat Ticks
 
@@ -1245,8 +1498,27 @@ This means:
 * even a stronger side usually takes some losses
 * even a weaker side can inflict damage before collapsing
 * battles usually last several days instead of disappearing in one instant roll
+* defended systems naturally behave more like sieges than open battles
 
-21.4 Post-Tick Decisions
+21.4 Siege and Pinning
+
+Prepared defenses should buy time, not just raw combat strength.
+
+For the first implementation:
+
+* if `system.defense > 0`, the battle is treated as a siege-like engagement
+* siege-like engagements last longer because the attacker suffers `siege_drag`
+* this gives nearby relief fleets time to matter
+
+Pinning does not mean the defender is physically unable to retreat anywhere in space.
+
+It means:
+
+* leaving early abandons the defended objective
+* leaving during an active siege risks defeat in detail
+* leaving while a nearby support system is threatened may lose the wider campaign even if the local fleet escapes
+
+21.5 Post-Tick Decisions
 
 After each combat tick:
 
@@ -1257,7 +1529,23 @@ After each combat tick:
 
 This is where information and pre-written rules matter. A player who arrived with the larger force but the wrong standing order can still lose the campaign.
 
-21.5 Meaningful Control
+21.6 Flanking and Relief Arrival
+
+Flanking should be operational rather than geometric.
+
+For the first implementation:
+
+* if a second fleet arrives after a battle has already started, that side gains `flank_bonus`
+* `flank_bonus` lasts for `3` combat days after the reinforcing arrival
+* if the enemy's nearest friendly support system is currently blockaded, that enemy also suffers `cut_support_penalty`
+
+This rewards:
+
+* pinning one enemy force in place
+* arriving with a second force later
+* using a captured or fortified waypoint system to threaten the rear
+
+21.7 Meaningful Control
 
 Control should be based on combat power, not token presence.
 
@@ -1277,7 +1565,7 @@ This creates the intended behavior:
 * a battered remnant can still matter if it remains above the contest threshold
 * defenses count heavily toward control
 
-21.6 Capture And Claim Timers
+21.8 Capture And Claim Timers
 
 Use explicit day counts for control transfer.
 
@@ -1297,7 +1585,7 @@ For open systems:
 claim_duration = 3 + ceil(system.infrastructure / 10)
 ```
 
-21.7 Control Progress
+21.9 Control Progress
 
 At the end of each day:
 
@@ -1312,7 +1600,7 @@ else:
 
 For open systems, replace `capture_progress` with `claim_progress` using the same logic.
 
-21.8 Minimal State Variables
+21.10 Minimal State Variables
 
 Initial combat and control evaluation may reference:
 
@@ -1326,8 +1614,12 @@ Initial combat and control evaluation may reference:
 * `defender_ships`
 * `attacker_effective_power`
 * `defender_effective_power`
+* `battle.days_since_start`
+* `battle.last_reinforcement_day`
+* `attacker_support_system_is_blockaded`
+* `defender_support_system_is_blockaded`
 
-21.9 Example: Prepared Defense
+21.11 Example: Prepared Defense
 
 ```text
 1. Attacker arrives with 12 ships
@@ -1432,7 +1724,7 @@ If `repeat_interval_days` is set:
 
 * the fleet waits until the interval expires
 * reloads at its current origin if cargo is available
-* repeats the same route and trade order
+* repeats the same path and trade order
 
 If the origin lacks enough cargo, the fleet waits instead of partially improvising a different mission.
 
@@ -1440,9 +1732,9 @@ If the origin lacks enough cargo, the fleet waits instead of partially improvisi
 
 Trade should matter for three reasons:
 
-* it lets a salt-rich system support a metal-poor frontier
+* it lets a salt-bearing system support a metal-poor frontier
 * it lets a metal-rich system fund defense and shipbuilding elsewhere
-* it creates another reason to scout, protect routes, and fight over productive stars
+* it creates another reason to scout, protect starlanes, and fight over productive stars
 
 22.8 Minimal State Variables
 
@@ -1474,6 +1766,7 @@ A new player begins with one home system configured approximately as:
 
 ```text
 star_type = yellow_star
+salt_profile = productive
 salt_stockpile = 60
 metal_stockpile = 80
 ships = 6
@@ -1491,10 +1784,10 @@ This gives the player:
 
 Each new player should begin with:
 
-* `3` to `5` nearby open systems within route distance `1` to `3`
-* at least one `salt-rich` option
+* `3` to `5` nearby open systems within direct distance `1` to `3`
+* at least one `salt-bearing` option
 * at least one `metal-rich` option
-* at least one balanced option
+* at least one strategically useful waypoint or balanced option
 
 Initial open systems should usually have:
 
@@ -1523,5 +1816,4 @@ The intended opening is:
 3. Build or launch a small claim fleet
 4. Secure the second system
 5. Decide whether to fortify, trade, scout deeper, or expand again
-```
 ```

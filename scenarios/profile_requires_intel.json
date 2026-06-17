@@ -30,6 +30,7 @@
     {
       "id": "n_home",
       "name": "Napoleon Home",
+      "position": { "x": 0, "y": 0 },
       "starType": "yellow_star",
       "metalRichness": "standard",
       "ownerId": "napoleon",
@@ -45,6 +46,7 @@
     {
       "id": "r_home",
       "name": "Red Home",
+      "position": { "x": 2, "y": 0 },
       "starType": "yellow_star",
       "metalRichness": "standard",
       "ownerId": "red",
@@ -60,6 +62,7 @@
     {
       "id": "fork",
       "name": "Fork",
+      "position": { "x": 1, "y": 0 },
       "starType": "red_dwarf",
       "metalRichness": "poor",
       "ownerId": null,
@@ -72,6 +75,7 @@
     {
       "id": "west",
       "name": "West Gate",
+      "position": { "x": 2, "y": 1.5 },
       "starType": "yellow_star",
       "metalRichness": "rich",
       "ownerId": "red",
@@ -130,7 +134,7 @@
     {
       "at": "2240-06-06",
       "path": "factions.napoleon.ownedSystems",
-      "op": "gte",
+      "op": "eq",
       "value": 2
     }
   ]

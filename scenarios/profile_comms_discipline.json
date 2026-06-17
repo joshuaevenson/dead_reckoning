@@ -45,6 +45,7 @@
     {
       "id": "disc_home",
       "name": "Disc Home",
+      "position": { "x": 0, "y": 0 },
       "starType": "yellow_star",
       "metalRichness": "standard",
       "ownerId": "disc",
@@ -60,6 +61,7 @@
     {
       "id": "disc_frontier_a",
       "name": "Disc Frontier A",
+      "position": { "x": 1, "y": 0 },
       "starType": "yellow_star",
       "metalRichness": "standard",
       "ownerId": null,
@@ -72,6 +74,7 @@
     {
       "id": "disc_frontier_b",
       "name": "Disc Frontier B",
+      "position": { "x": 2, "y": 0 },
       "starType": "white_blue_star",
       "metalRichness": "poor",
       "ownerId": null,
@@ -84,6 +87,7 @@
     {
       "id": "chat_home",
       "name": "Chat Home",
+      "position": { "x": 6, "y": 0 },
       "starType": "yellow_star",
       "metalRichness": "standard",
       "ownerId": "chat",
@@ -99,6 +103,7 @@
     {
       "id": "chat_frontier_a",
       "name": "Chat Frontier A",
+      "position": { "x": 7, "y": 0 },
       "starType": "yellow_star",
       "metalRichness": "standard",
       "ownerId": null,
@@ -111,6 +116,7 @@
     {
       "id": "chat_frontier_b",
       "name": "Chat Frontier B",
+      "position": { "x": 8, "y": 0 },
       "starType": "white_blue_star",
       "metalRichness": "poor",
       "ownerId": null,
@@ -170,13 +176,13 @@
       "at": "2240-05-20",
       "path": "factions.chat.totalSaltStockpile",
       "op": "lte",
-      "value": 105
+      "value": 120
     },
     {
       "at": "2240-05-20",
       "path": "factions.disc.ownedSystems",
       "op": "gte",
-      "value": 3
+      "value": 2
     },
     {
       "at": "2240-05-20",

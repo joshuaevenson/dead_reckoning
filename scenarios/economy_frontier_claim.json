@@ -14,6 +14,7 @@
     {
       "id": "home",
       "name": "Home",
+      "position": { "x": 0, "y": 0 },
       "starType": "yellow_star",
       "metalRichness": "standard",
       "ownerId": "blue",
@@ -29,6 +30,7 @@
     {
       "id": "frontier",
       "name": "Frontier",
+      "position": { "x": 2, "y": 0 },
       "starType": "yellow_star",
       "metalRichness": "rich",
       "ownerId": null,

@@ -1,0 +1,104 @@
+{
+  "name": "starlane_logistics_discount",
+  "seed": 31,
+  "startDate": "2240-05-01",
+  "durationDays": 6,
+  "factions": [
+    {
+      "id": "blue",
+      "name": "Blue League",
+      "homeSystemId": "home"
+    }
+  ],
+  "systems": [
+    {
+      "id": "home",
+      "name": "Home",
+      "position": { "x": 0, "y": 0 },
+      "starType": "yellow_star",
+      "saltProfile": "none",
+      "metalRichness": "standard",
+      "starlaneLinks": ["lane_mid"],
+      "ownerId": "blue",
+      "saltStockpile": 100,
+      "metalStockpile": 40,
+      "infrastructure": 6,
+      "defense": 2,
+      "controlAgeDays": 120,
+      "garrisonShips": {
+        "blue": 6
+      }
+    },
+    {
+      "id": "lane_mid",
+      "name": "Lane Mid",
+      "position": { "x": 2, "y": 0 },
+      "starType": "red_dwarf",
+      "saltProfile": "none",
+      "metalRichness": "poor",
+      "starlaneLinks": ["home", "target"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "infrastructure": 0,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "target",
+      "name": "Target",
+      "position": { "x": 4, "y": 0 },
+      "starType": "yellow_star",
+      "saltProfile": "productive",
+      "metalRichness": "rich",
+      "starlaneLinks": ["lane_mid"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "infrastructure": 0,
+      "defense": 0,
+      "controlAgeDays": 0
+    }
+  ],
+  "commands": [
+    {
+      "type": "launch_fleet",
+      "at": "2240-05-01",
+      "factionId": "blue",
+      "originSystemId": "home",
+      "destinationSystemId": "target",
+      "ships": 4,
+      "mission": "attack",
+      "cargoSalt": 0,
+      "metals": 0,
+      "retreatSystemId": "home",
+      "name": "Lane Spearhead"
+    }
+  ],
+  "expectations": [
+    {
+      "at": "2240-05-01",
+      "path": "systems.home.saltStockpile",
+      "op": "eq",
+      "value": 36
+    },
+    {
+      "at": "2240-05-01",
+      "path": "fleets.fleet-1.usesStarlane",
+      "op": "eq",
+      "value": true
+    },
+    {
+      "at": "2240-05-04",
+      "path": "fleets.fleet-1.currentSystemId",
+      "op": "eq",
+      "value": "target"
+    },
+    {
+      "at": "2240-05-06",
+      "path": "systems.target.ownerId",
+      "op": "eq",
+      "value": "blue"
+    }
+  ]
+}

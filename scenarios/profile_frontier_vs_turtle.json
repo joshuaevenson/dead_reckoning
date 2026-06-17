@@ -42,6 +42,7 @@
     {
       "id": "blue_home",
       "name": "Blue Home",
+      "position": { "x": 0, "y": 0 },
       "starType": "yellow_star",
       "metalRichness": "standard",
       "ownerId": "blue",
@@ -57,6 +58,7 @@
     {
       "id": "blue_frontier_a",
       "name": "Blue Frontier A",
+      "position": { "x": 1, "y": 0 },
       "starType": "yellow_star",
       "metalRichness": "rich",
       "ownerId": null,
@@ -69,6 +71,7 @@
     {
       "id": "blue_frontier_b",
       "name": "Blue Frontier B",
+      "position": { "x": 2, "y": 0 },
       "starType": "red_dwarf",
       "metalRichness": "exceptional",
       "ownerId": null,
@@ -81,6 +84,7 @@
     {
       "id": "green_home",
       "name": "Green Home",
+      "position": { "x": 6, "y": 0 },
       "starType": "yellow_star",
       "metalRichness": "standard",
       "ownerId": "green",
@@ -96,6 +100,7 @@
     {
       "id": "green_frontier_a",
       "name": "Green Frontier A",
+      "position": { "x": 7, "y": 0 },
       "starType": "yellow_star",
       "metalRichness": "rich",
       "ownerId": null,
@@ -108,6 +113,7 @@
     {
       "id": "green_frontier_b",
       "name": "Green Frontier B",
+      "position": { "x": 8, "y": 0 },
       "starType": "red_dwarf",
       "metalRichness": "exceptional",
       "ownerId": null,
@@ -161,7 +167,7 @@
       "at": "2240-04-20",
       "path": "factions.blue.ownedSystems",
       "op": "gte",
-      "value": 3
+      "value": 2
     },
     {
       "at": "2240-04-20",

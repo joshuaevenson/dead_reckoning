@@ -17,6 +17,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "home",
         "name": "Home",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
         "starType": "yellow_star",
         "metalRichness": "standard",
         "ownerId": "blue",
@@ -32,6 +36,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "frontier",
         "name": "Frontier",
+        "position": {
+          "x": 2,
+          "y": 0
+        },
         "starType": "yellow_star",
         "metalRichness": "rich",
         "ownerId": null,
@@ -110,6 +118,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "home",
         "name": "Home",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
         "starType": "yellow_star",
         "metalRichness": "standard",
         "ownerId": "blue",
@@ -125,6 +137,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "frontier_west",
         "name": "Frontier West",
+        "position": {
+          "x": 2,
+          "y": 2
+        },
         "starType": "yellow_star",
         "metalRichness": "rich",
         "ownerId": "blue",
@@ -140,6 +156,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "frontier_east",
         "name": "Frontier East",
+        "position": {
+          "x": 2,
+          "y": -2
+        },
         "starType": "yellow_star",
         "metalRichness": "standard",
         "ownerId": "blue",
@@ -155,6 +175,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "enemy_home",
         "name": "Enemy Home",
+        "position": {
+          "x": 2,
+          "y": 0
+        },
         "starType": "yellow_star",
         "metalRichness": "standard",
         "ownerId": "red",
@@ -170,6 +194,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "watch",
         "name": "Watchpoint",
+        "position": {
+          "x": 1,
+          "y": 0
+        },
         "starType": "red_dwarf",
         "metalRichness": "poor",
         "ownerId": null,
@@ -338,6 +366,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "n_home",
         "name": "Napoleon Home",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
         "starType": "yellow_star",
         "metalRichness": "standard",
         "ownerId": "napoleon",
@@ -353,6 +385,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "b_home",
         "name": "Bad Home",
+        "position": {
+          "x": 2,
+          "y": 0
+        },
         "starType": "yellow_star",
         "metalRichness": "standard",
         "ownerId": "bad",
@@ -368,6 +404,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "fork",
         "name": "Fork",
+        "position": {
+          "x": 1,
+          "y": 0
+        },
         "starType": "red_dwarf",
         "metalRichness": "poor",
         "ownerId": null,
@@ -380,6 +420,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "west",
         "name": "West Gate",
+        "position": {
+          "x": 2,
+          "y": 1.5
+        },
         "starType": "yellow_star",
         "metalRichness": "rich",
         "ownerId": "bad",
@@ -395,6 +439,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "east",
         "name": "East Gate",
+        "position": {
+          "x": 2,
+          "y": -1.5
+        },
         "starType": "yellow_star",
         "metalRichness": "standard",
         "ownerId": "bad",
@@ -477,7 +525,7 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
     "name": "napoleon_beats_bad_commander_with_extra_salt",
     "seed": 19,
     "startDate": "2240-03-01",
-    "durationDays": 20,
+    "durationDays": 26,
     "commanderProfiles": [
       {
         "id": "napoleon",
@@ -541,6 +589,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "n_home",
         "name": "Napoleon Home",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
         "starType": "yellow_star",
         "metalRichness": "standard",
         "ownerId": "napoleon",
@@ -556,6 +608,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "b_home",
         "name": "Bad Home",
+        "position": {
+          "x": 2,
+          "y": 0
+        },
         "starType": "yellow_star",
         "metalRichness": "standard",
         "ownerId": "bad",
@@ -571,6 +627,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "fork",
         "name": "Fork",
+        "position": {
+          "x": 1,
+          "y": 0
+        },
         "starType": "red_dwarf",
         "metalRichness": "poor",
         "ownerId": null,
@@ -583,6 +643,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "west",
         "name": "West Gate",
+        "position": {
+          "x": 2,
+          "y": 1.5
+        },
         "starType": "yellow_star",
         "metalRichness": "rich",
         "ownerId": "bad",
@@ -598,6 +662,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "east",
         "name": "East Gate",
+        "position": {
+          "x": 2,
+          "y": -1.5
+        },
         "starType": "yellow_star",
         "metalRichness": "standard",
         "ownerId": "bad",
@@ -651,19 +719,19 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
     ],
     "expectations": [
       {
-        "at": "2240-03-20",
+        "at": "2240-03-26",
         "path": "systems.west.ownerId",
         "op": "eq",
         "value": "napoleon"
       },
       {
-        "at": "2240-03-20",
+        "at": "2240-03-26",
         "path": "systems.east.ownerId",
         "op": "eq",
         "value": "bad"
       },
       {
-        "at": "2240-03-20",
+        "at": "2240-03-26",
         "path": "factions.napoleon.ownedSystems",
         "op": "gte",
         "value": 2
@@ -717,6 +785,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "disc_home",
         "name": "Disc Home",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
         "starType": "yellow_star",
         "metalRichness": "standard",
         "ownerId": "disc",
@@ -732,6 +804,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "disc_frontier_a",
         "name": "Disc Frontier A",
+        "position": {
+          "x": 1,
+          "y": 0
+        },
         "starType": "yellow_star",
         "metalRichness": "standard",
         "ownerId": null,
@@ -744,6 +820,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "disc_frontier_b",
         "name": "Disc Frontier B",
+        "position": {
+          "x": 2,
+          "y": 0
+        },
         "starType": "white_blue_star",
         "metalRichness": "poor",
         "ownerId": null,
@@ -756,6 +836,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "chat_home",
         "name": "Chat Home",
+        "position": {
+          "x": 6,
+          "y": 0
+        },
         "starType": "yellow_star",
         "metalRichness": "standard",
         "ownerId": "chat",
@@ -771,6 +855,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "chat_frontier_a",
         "name": "Chat Frontier A",
+        "position": {
+          "x": 7,
+          "y": 0
+        },
         "starType": "yellow_star",
         "metalRichness": "standard",
         "ownerId": null,
@@ -783,6 +871,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "chat_frontier_b",
         "name": "Chat Frontier B",
+        "position": {
+          "x": 8,
+          "y": 0
+        },
         "starType": "white_blue_star",
         "metalRichness": "poor",
         "ownerId": null,
@@ -842,13 +934,13 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
         "at": "2240-05-20",
         "path": "factions.chat.totalSaltStockpile",
         "op": "lte",
-        "value": 105
+        "value": 120
       },
       {
         "at": "2240-05-20",
         "path": "factions.disc.ownedSystems",
         "op": "gte",
-        "value": 3
+        "value": 2
       },
       {
         "at": "2240-05-20",
@@ -902,6 +994,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "blue_home",
         "name": "Blue Home",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
         "starType": "yellow_star",
         "metalRichness": "standard",
         "ownerId": "blue",
@@ -917,6 +1013,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "blue_frontier_a",
         "name": "Blue Frontier A",
+        "position": {
+          "x": 1,
+          "y": 0
+        },
         "starType": "yellow_star",
         "metalRichness": "rich",
         "ownerId": null,
@@ -929,6 +1029,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "blue_frontier_b",
         "name": "Blue Frontier B",
+        "position": {
+          "x": 2,
+          "y": 0
+        },
         "starType": "red_dwarf",
         "metalRichness": "exceptional",
         "ownerId": null,
@@ -941,6 +1045,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "green_home",
         "name": "Green Home",
+        "position": {
+          "x": 6,
+          "y": 0
+        },
         "starType": "yellow_star",
         "metalRichness": "standard",
         "ownerId": "green",
@@ -956,6 +1064,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "green_frontier_a",
         "name": "Green Frontier A",
+        "position": {
+          "x": 7,
+          "y": 0
+        },
         "starType": "yellow_star",
         "metalRichness": "rich",
         "ownerId": null,
@@ -968,6 +1080,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "green_frontier_b",
         "name": "Green Frontier B",
+        "position": {
+          "x": 8,
+          "y": 0
+        },
         "starType": "red_dwarf",
         "metalRichness": "exceptional",
         "ownerId": null,
@@ -1021,7 +1137,7 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
         "at": "2240-04-20",
         "path": "factions.blue.ownedSystems",
         "op": "gte",
-        "value": 3
+        "value": 2
       },
       {
         "at": "2240-04-20",
@@ -1069,6 +1185,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "n_home",
         "name": "Napoleon Home",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
         "starType": "yellow_star",
         "metalRichness": "standard",
         "ownerId": "napoleon",
@@ -1084,6 +1204,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "r_home",
         "name": "Red Home",
+        "position": {
+          "x": 2,
+          "y": 0
+        },
         "starType": "yellow_star",
         "metalRichness": "standard",
         "ownerId": "red",
@@ -1099,6 +1223,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "fork",
         "name": "Fork",
+        "position": {
+          "x": 1,
+          "y": 0
+        },
         "starType": "red_dwarf",
         "metalRichness": "poor",
         "ownerId": null,
@@ -1111,6 +1239,10 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "id": "west",
         "name": "West Gate",
+        "position": {
+          "x": 2,
+          "y": 1.5
+        },
         "starType": "yellow_star",
         "metalRichness": "rich",
         "ownerId": "red",
@@ -1169,8 +1301,269 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       {
         "at": "2240-06-06",
         "path": "factions.napoleon.ownedSystems",
-        "op": "gte",
+        "op": "eq",
         "value": 2
+      }
+    ]
+  },
+  "starlane_blockade_interception": {
+    "name": "starlane_blockade_interception",
+    "seed": 47,
+    "startDate": "2240-06-01",
+    "durationDays": 7,
+    "factions": [
+      {
+        "id": "blue",
+        "name": "Blue League",
+        "homeSystemId": "blue_home"
+      },
+      {
+        "id": "red",
+        "name": "Red Compact",
+        "homeSystemId": "screen"
+      }
+    ],
+    "systems": [
+      {
+        "id": "blue_home",
+        "name": "Blue Home",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "starType": "yellow_star",
+        "saltProfile": "none",
+        "metalRichness": "standard",
+        "starlaneLinks": [
+          "screen"
+        ],
+        "ownerId": "blue",
+        "saltStockpile": 120,
+        "metalStockpile": 60,
+        "infrastructure": 8,
+        "defense": 3,
+        "controlAgeDays": 180,
+        "garrisonShips": {
+          "blue": 8
+        }
+      },
+      {
+        "id": "screen",
+        "name": "Screen",
+        "position": {
+          "x": 2,
+          "y": 0
+        },
+        "starType": "red_dwarf",
+        "saltProfile": "none",
+        "metalRichness": "poor",
+        "starlaneLinks": [
+          "blue_home",
+          "target"
+        ],
+        "ownerId": "red",
+        "saltStockpile": 20,
+        "metalStockpile": 10,
+        "infrastructure": 2,
+        "defense": 1,
+        "controlAgeDays": 80,
+        "garrisonShips": {
+          "red": 3
+        }
+      },
+      {
+        "id": "target",
+        "name": "Target",
+        "position": {
+          "x": 4,
+          "y": 0
+        },
+        "starType": "yellow_star",
+        "saltProfile": "none",
+        "metalRichness": "rich",
+        "starlaneLinks": [
+          "screen"
+        ],
+        "ownerId": null,
+        "saltStockpile": 0,
+        "metalStockpile": 0,
+        "infrastructure": 1,
+        "defense": 0,
+        "controlAgeDays": 0,
+        "garrisonShips": {
+          "red": 5
+        }
+      }
+    ],
+    "fleets": [
+      {
+        "id": "red-screen-blockade",
+        "name": "Red Screen Blockade",
+        "factionId": "red",
+        "currentSystemId": "screen",
+        "ships": 3,
+        "mission": "blockade"
+      }
+    ],
+    "commands": [
+      {
+        "type": "launch_fleet",
+        "at": "2240-06-01",
+        "factionId": "blue",
+        "originSystemId": "blue_home",
+        "destinationSystemId": "target",
+        "ships": 7,
+        "mission": "attack",
+        "cargoSalt": 0,
+        "metals": 0,
+        "retreatSystemId": "blue_home",
+        "name": "Blue Main Body"
+      }
+    ],
+    "expectations": [
+      {
+        "at": "2240-06-01",
+        "path": "fleets.fleet-1.usesStarlane",
+        "op": "eq",
+        "value": true
+      },
+      {
+        "at": "2240-06-01",
+        "path": "fleets.fleet-1.interceptedCombatDaysRemaining",
+        "op": "eq",
+        "value": 2
+      },
+      {
+        "at": "2240-06-01",
+        "path": "fleets.fleet-1.interceptedByFactionId",
+        "op": "eq",
+        "value": "red"
+      },
+      {
+        "at": "2240-06-07",
+        "path": "systems.target.ownerId",
+        "op": "neq",
+        "value": "blue"
+      }
+    ]
+  },
+  "starlane_logistics_discount": {
+    "name": "starlane_logistics_discount",
+    "seed": 31,
+    "startDate": "2240-05-01",
+    "durationDays": 6,
+    "factions": [
+      {
+        "id": "blue",
+        "name": "Blue League",
+        "homeSystemId": "home"
+      }
+    ],
+    "systems": [
+      {
+        "id": "home",
+        "name": "Home",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "starType": "yellow_star",
+        "saltProfile": "none",
+        "metalRichness": "standard",
+        "starlaneLinks": [
+          "lane_mid"
+        ],
+        "ownerId": "blue",
+        "saltStockpile": 100,
+        "metalStockpile": 40,
+        "infrastructure": 6,
+        "defense": 2,
+        "controlAgeDays": 120,
+        "garrisonShips": {
+          "blue": 6
+        }
+      },
+      {
+        "id": "lane_mid",
+        "name": "Lane Mid",
+        "position": {
+          "x": 2,
+          "y": 0
+        },
+        "starType": "red_dwarf",
+        "saltProfile": "none",
+        "metalRichness": "poor",
+        "starlaneLinks": [
+          "home",
+          "target"
+        ],
+        "ownerId": null,
+        "saltStockpile": 0,
+        "metalStockpile": 0,
+        "infrastructure": 0,
+        "defense": 0,
+        "controlAgeDays": 0
+      },
+      {
+        "id": "target",
+        "name": "Target",
+        "position": {
+          "x": 4,
+          "y": 0
+        },
+        "starType": "yellow_star",
+        "saltProfile": "productive",
+        "metalRichness": "rich",
+        "starlaneLinks": [
+          "lane_mid"
+        ],
+        "ownerId": null,
+        "saltStockpile": 0,
+        "metalStockpile": 0,
+        "infrastructure": 0,
+        "defense": 0,
+        "controlAgeDays": 0
+      }
+    ],
+    "commands": [
+      {
+        "type": "launch_fleet",
+        "at": "2240-05-01",
+        "factionId": "blue",
+        "originSystemId": "home",
+        "destinationSystemId": "target",
+        "ships": 4,
+        "mission": "attack",
+        "cargoSalt": 0,
+        "metals": 0,
+        "retreatSystemId": "home",
+        "name": "Lane Spearhead"
+      }
+    ],
+    "expectations": [
+      {
+        "at": "2240-05-01",
+        "path": "systems.home.saltStockpile",
+        "op": "eq",
+        "value": 36
+      },
+      {
+        "at": "2240-05-01",
+        "path": "fleets.fleet-1.usesStarlane",
+        "op": "eq",
+        "value": true
+      },
+      {
+        "at": "2240-05-04",
+        "path": "fleets.fleet-1.currentSystemId",
+        "op": "eq",
+        "value": "target"
+      },
+      {
+        "at": "2240-05-06",
+        "path": "systems.target.ownerId",
+        "op": "eq",
+        "value": "blue"
       }
     ]
   }

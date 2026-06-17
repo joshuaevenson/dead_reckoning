@@ -1,0 +1,125 @@
+{
+  "name": "starlane_blockade_interception",
+  "seed": 47,
+  "startDate": "2240-06-01",
+  "durationDays": 7,
+  "factions": [
+    {
+      "id": "blue",
+      "name": "Blue League",
+      "homeSystemId": "blue_home"
+    },
+    {
+      "id": "red",
+      "name": "Red Compact",
+      "homeSystemId": "screen"
+    }
+  ],
+  "systems": [
+    {
+      "id": "blue_home",
+      "name": "Blue Home",
+      "position": { "x": 0, "y": 0 },
+      "starType": "yellow_star",
+      "saltProfile": "none",
+      "metalRichness": "standard",
+      "starlaneLinks": ["screen"],
+      "ownerId": "blue",
+      "saltStockpile": 120,
+      "metalStockpile": 60,
+      "infrastructure": 8,
+      "defense": 3,
+      "controlAgeDays": 180,
+      "garrisonShips": {
+        "blue": 8
+      }
+    },
+    {
+      "id": "screen",
+      "name": "Screen",
+      "position": { "x": 2, "y": 0 },
+      "starType": "red_dwarf",
+      "saltProfile": "none",
+      "metalRichness": "poor",
+      "starlaneLinks": ["blue_home", "target"],
+      "ownerId": "red",
+      "saltStockpile": 20,
+      "metalStockpile": 10,
+      "infrastructure": 2,
+      "defense": 1,
+      "controlAgeDays": 80,
+      "garrisonShips": {
+        "red": 3
+      }
+    },
+    {
+      "id": "target",
+      "name": "Target",
+      "position": { "x": 4, "y": 0 },
+      "starType": "yellow_star",
+      "saltProfile": "none",
+      "metalRichness": "rich",
+      "starlaneLinks": ["screen"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "infrastructure": 1,
+      "defense": 0,
+      "controlAgeDays": 0,
+      "garrisonShips": {
+        "red": 5
+      }
+    }
+  ],
+  "fleets": [
+    {
+      "id": "red-screen-blockade",
+      "name": "Red Screen Blockade",
+      "factionId": "red",
+      "currentSystemId": "screen",
+      "ships": 3,
+      "mission": "blockade"
+    }
+  ],
+  "commands": [
+    {
+      "type": "launch_fleet",
+      "at": "2240-06-01",
+      "factionId": "blue",
+      "originSystemId": "blue_home",
+      "destinationSystemId": "target",
+      "ships": 7,
+      "mission": "attack",
+      "cargoSalt": 0,
+      "metals": 0,
+      "retreatSystemId": "blue_home",
+      "name": "Blue Main Body"
+    }
+  ],
+  "expectations": [
+    {
+      "at": "2240-06-01",
+      "path": "fleets.fleet-1.usesStarlane",
+      "op": "eq",
+      "value": true
+    },
+    {
+      "at": "2240-06-01",
+      "path": "fleets.fleet-1.interceptedCombatDaysRemaining",
+      "op": "eq",
+      "value": 2
+    },
+    {
+      "at": "2240-06-01",
+      "path": "fleets.fleet-1.interceptedByFactionId",
+      "op": "eq",
+      "value": "red"
+    },
+    {
+      "at": "2240-06-07",
+      "path": "systems.target.ownerId",
+      "op": "neq",
+      "value": "blue"
+    }
+  ]
+}

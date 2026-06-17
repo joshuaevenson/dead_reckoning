@@ -517,6 +517,12 @@ body {
   margin: 10px 0 0;
 }
 
+.brief-actions {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-start;
+}
+
 .p-button {
   border-radius: 12px !important;
 }

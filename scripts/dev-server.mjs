@@ -40,6 +40,20 @@ async function readBody(request) {
   return Buffer.concat(chunks);
 }
 
+async function probeExistingServer() {
+  try {
+    const response = await fetch(`http://${host}:${port}/api/health`);
+    if (!response.ok) {
+      return null;
+    }
+
+    const body = await response.json();
+    return body?.service === "dead-reckoning-worker" ? body : null;
+  } catch {
+    return null;
+  }
+}
+
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
@@ -81,6 +95,21 @@ const server = createServer(async (request, response) => {
     response.setHeader("content-type", "text/plain; charset=utf-8");
     response.end(error instanceof Error ? error.message : "Unknown server error");
   }
+});
+
+server.on("error", async (error) => {
+  if (error && (error.code === "EADDRINUSE" || error.code === "EPERM")) {
+    const existing = await probeExistingServer();
+    if (existing) {
+      console.log(`Dead Reckoning UI already running at http://${host}:${port}`);
+      process.exit(0);
+    }
+  }
+
+  console.error(
+    `Unable to start Dead Reckoning UI on http://${host}:${port}: ${error instanceof Error ? error.message : String(error)}`,
+  );
+  process.exit(1);
 });
 
 server.listen(port, host, () => {

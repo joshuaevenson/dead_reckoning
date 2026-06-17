@@ -1,4 +1,4 @@
-import { RouteGraph } from "./graph.js";
+import { TravelGraph } from "./graph.js";
 import { Rng } from "./rng.js";
 import type {
   AssertionResult,
@@ -35,6 +35,12 @@ import { addDays, ceil, clamp, deepClone, diffDays, getByPath, round } from "./u
 const SHIP_MASS = 5;
 const DEFENSE_POWER = 3;
 const HOLD_BONUS = 0.15;
+const SIEGE_DRAG = 0.2;
+const FLANK_BONUS = 0.2;
+const FLANK_DURATION_DAYS = 3;
+const CUT_SUPPORT_PENALTY = 0.1;
+const INTERCEPTED_DEPLOYMENT_PENALTY = 0.25;
+const INTERCEPTED_PENALTY_DURATION = 2;
 const CONTEST_THRESHOLD = 3;
 const SHIP_BUILD_SALT = 5;
 const SHIP_BUILD_METAL = 10;
@@ -50,6 +56,12 @@ type PendingReport = {
   report: Report;
 };
 
+type BattleState = {
+  startDate: string;
+  seenFleetIdsByFaction: Map<string, Set<string>>;
+  lastReinforcementDateByFaction: Map<string, string>;
+};
+
 type PerceivedRouteOption = {
   originSystemId: string;
   distance: number;
@@ -59,6 +71,7 @@ type PerceivedRouteOption = {
 type PerceivedSystemIntel = {
   systemId: string;
   starType?: SystemState["starType"];
+  saltProfile?: SystemState["saltProfile"];
   metalRichness?: SystemState["metalRichness"];
   knownOwnerId?: string | null;
   knownShips?: number;
@@ -84,7 +97,7 @@ export function simulateScenario(scenario: ScenarioDefinition): SimulationResult
 
 class SimulationEngine {
   private readonly rng: Rng;
-  private readonly graph: RouteGraph;
+  private readonly graph: TravelGraph;
   private readonly scenario: ScenarioDefinition;
   private readonly systems = new Map<string, SystemState>();
   private readonly factions = new Map<string, FactionState>();
@@ -95,6 +108,7 @@ class SimulationEngine {
   private readonly pendingReports: PendingReport[] = [];
   private readonly commandsByDate = new Map<string, ScenarioCommand[]>();
   private readonly commanderProfiles = new Map<string, CommanderProfileDefinition>();
+  private readonly battleStates = new Map<string, BattleState>();
   private readonly snapshots: SimulationSnapshot[] = [];
   private readonly log: string[] = [];
   private idCounter = 1;
@@ -102,7 +116,7 @@ class SimulationEngine {
   constructor(scenario: ScenarioDefinition) {
     this.scenario = deepClone(scenario);
     this.rng = new Rng(scenario.seed);
-    this.graph = new RouteGraph(scenario.routes);
+    this.graph = new TravelGraph(scenario.systems);
 
     for (const profile of scenario.commanderProfiles ?? []) {
       this.commanderProfiles.set(profile.id, profile);
@@ -403,17 +417,21 @@ class SimulationEngine {
       routeDistanceRemaining: plan.distance,
       routeTravelDaysRemaining: plan.travelDays,
       routeHeading: plan.heading,
+      usesStarlane: plan.usesStarlane,
+      travelSegmentIds: plan.segmentIds,
+      travelPathSystemIds: plan.pathSystemIds,
       retreatSystemId: command.retreatSystemId,
       rules: command.rules ?? [],
     };
 
     this.fleets.set(fleet.id, fleet);
+    this.applyBlockadeInterception(date, fleet, plan.pathSystemIds, plan.segmentIds);
     this.log.push(
       `${date}: ${command.factionId} launched ${fleet.id} from ${command.originSystemId} to ${command.destinationSystemId}`,
     );
 
     this.scheduleTelescopeBurnReports(date, command.originSystemId, "departure", fleet);
-    this.scheduleProbeSightings(date, fleet, plan.firstRouteId);
+    this.scheduleProbeSightings(date, fleet, plan.segmentIds);
   }
 
   private executeSendPigeon(
@@ -462,10 +480,13 @@ class SimulationEngine {
       id: this.nextId("probe"),
       factionId: command.factionId,
       status: plan.travelDays === 0 ? "deployed" : "transit",
+      originSystemId: command.originSystemId,
       currentSystemId: plan.travelDays === 0 ? command.anchorSystemId : undefined,
       anchorSystemId: command.anchorSystemId,
       arrivalDate: plan.travelDays === 0 ? undefined : addDays(date, plan.travelDays),
       watchedRouteId: command.watchedRouteId,
+      watchedStarlaneId: command.watchedStarlaneId ?? command.watchedRouteId,
+      watchedCorridorSystemId: command.watchedCorridorSystemId,
       watchedSystemApproachId: command.watchedSystemApproachId,
       reportDestinationSystemId: command.reportDestinationSystemId,
       reportSaltReserve: command.reportSaltReserve ?? 1,
@@ -473,7 +494,9 @@ class SimulationEngine {
     };
 
     this.probes.set(probe.id, probe);
-    this.log.push(`${date}: ${command.factionId} deployed probe ${probe.id}`);
+    this.log.push(
+      `${date}: ${command.factionId} deployed probe ${probe.id} from ${command.originSystemId} to ${command.anchorSystemId}`,
+    );
   }
 
   private executeBuild(
@@ -542,14 +565,18 @@ class SimulationEngine {
     fleet.routeTravelDaysRemaining = newPlan.travelDays;
     fleet.arrivalDate = addDays(date, newPlan.travelDays);
     fleet.routeHeading = newPlan.heading;
+    fleet.usesStarlane = newPlan.usesStarlane;
+    fleet.travelSegmentIds = newPlan.segmentIds;
+    fleet.travelPathSystemIds = newPlan.pathSystemIds;
+    this.applyBlockadeInterception(date, fleet, newPlan.pathSystemIds, newPlan.segmentIds);
     this.log.push(`${date}: fleet ${fleetId} turned toward ${destinationSystemId}`);
-    this.scheduleProbeSightings(date, fleet, newPlan.firstRouteId);
+    this.scheduleProbeSightings(date, fleet, newPlan.segmentIds);
   }
 
   private processProduction(date: string): void {
     for (const system of this.systems.values()) {
       if (system.ownerId) {
-        const saltBase = this.baseSaltOutput(system.starType);
+        const saltBase = this.baseSaltOutput(system.saltProfile, system.starType);
         const metalBase = this.baseMetalOutput(system.metalRichness);
         const dailySalt = round(saltBase * this.rng.between(0.9, 1.1));
         const dailyMetal = round(metalBase * this.rng.between(0.95, 1.05));
@@ -568,9 +595,11 @@ class SimulationEngine {
     for (const system of this.systems.values()) {
       const factionsPresent = this.presentFactions(system.id);
       if (factionsPresent.length < 2) {
+        this.battleStates.delete(system.id);
         continue;
       }
 
+      const battleState = this.touchBattleState(date, system.id, factionsPresent);
       const defenderFactionId =
         (system.ownerId && factionsPresent.includes(system.ownerId)) ? system.ownerId : factionsPresent[0];
       const attackerFactionId = factionsPresent.find((factionId) => factionId !== defenderFactionId);
@@ -580,19 +609,41 @@ class SimulationEngine {
 
       const attackerShips = this.totalShipsAtSystem(system.id, attackerFactionId);
       const defenderShips = this.totalShipsAtSystem(system.id, defenderFactionId);
-      const defenderBasePower = defenderShips + (system.ownerId === defenderFactionId ? system.defense * DEFENSE_POWER : 0);
+      const attackerFleetPower = this.fleetCombatPower(system.id, attackerFactionId);
+      const defenderFleetPower = this.fleetCombatPower(system.id, defenderFactionId);
+      const defenderBasePower =
+        defenderFleetPower + (system.ownerId === defenderFactionId ? system.defense * DEFENSE_POWER : 0);
       const defenderEffectivePower =
         system.ownerId === defenderFactionId
           ? defenderBasePower * (1 + HOLD_BONUS)
           : defenderBasePower;
-      const attackerEffectivePower = attackerShips;
+      let attackerEffectivePower = attackerFleetPower;
+      let adjustedDefenderEffectivePower = defenderEffectivePower;
 
-      if (attackerEffectivePower <= 0 || defenderEffectivePower <= 0) {
+      if (system.defense > 0 && system.ownerId === defenderFactionId) {
+        attackerEffectivePower *= 1 - SIEGE_DRAG;
+      }
+
+      if (this.hasActiveFlankBonus(battleState, attackerFactionId, date)) {
+        attackerEffectivePower *= 1 + FLANK_BONUS;
+      }
+      if (this.hasActiveFlankBonus(battleState, defenderFactionId, date)) {
+        adjustedDefenderEffectivePower *= 1 + FLANK_BONUS;
+      }
+
+      if (this.hasBlockadedNearestSupportSystem(system.id, attackerFactionId)) {
+        attackerEffectivePower *= 1 - CUT_SUPPORT_PENALTY;
+      }
+      if (this.hasBlockadedNearestSupportSystem(system.id, defenderFactionId)) {
+        adjustedDefenderEffectivePower *= 1 - CUT_SUPPORT_PENALTY;
+      }
+
+      if (attackerEffectivePower <= 0 || adjustedDefenderEffectivePower <= 0) {
         continue;
       }
 
       const attackerRoll = attackerEffectivePower * this.rng.between(0.9, 1.1);
-      const defenderRoll = defenderEffectivePower * this.rng.between(0.9, 1.1);
+      const defenderRoll = adjustedDefenderEffectivePower * this.rng.between(0.9, 1.1);
       const attackerLossFraction = clamp(0.15, 0.85, defenderRoll / (attackerRoll + defenderRoll));
       const defenderLossFraction = clamp(0.15, 0.85, attackerRoll / (attackerRoll + defenderRoll));
       const attackerShipLosses = Math.min(attackerShips, ceil(attackerShips * attackerLossFraction * 0.5));
@@ -605,6 +656,8 @@ class SimulationEngine {
       this.applyShipLosses(system.id, attackerFactionId, attackerShipLosses);
       this.applyShipLosses(system.id, defenderFactionId, defenderShipLosses);
       system.defense = Math.max(0, system.defense - defenseLosses);
+      this.consumeInterceptionPenalty(system.id, attackerFactionId);
+      this.consumeInterceptionPenalty(system.id, defenderFactionId);
 
       this.scheduleCombatReports(date, system.id, attackerFactionId, defenderFactionId, attackerShipLosses, defenderShipLosses, defenseLosses);
       this.log.push(
@@ -706,6 +759,9 @@ class SimulationEngine {
         cargoSalt: fleet.cargoSalt,
         metals: fleet.metals,
         mission: fleet.mission,
+        usesStarlane: fleet.usesStarlane,
+        interceptedCombatDaysRemaining: fleet.interceptedCombatDaysRemaining,
+        interceptedByFactionId: fleet.interceptedByFactionId,
       };
     }
 
@@ -717,9 +773,13 @@ class SimulationEngine {
       probes[probe.id] = {
         factionId: probe.factionId,
         status: probe.status,
+        originSystemId: probe.originSystemId,
         currentSystemId: probe.currentSystemId,
         anchorSystemId: probe.anchorSystemId,
+        arrivalDate: probe.arrivalDate,
         watchedRouteId: probe.watchedRouteId,
+        watchedStarlaneId: probe.watchedStarlaneId,
+        watchedCorridorSystemId: probe.watchedCorridorSystemId,
         watchedSystemApproachId: probe.watchedSystemApproachId,
       };
     }
@@ -863,7 +923,8 @@ class SimulationEngine {
         ownerId: system.ownerId,
         ships: this.totalShipsAtSystem(system.id),
         defense: system.defense,
-        saltOutput: this.baseSaltOutput(system.starType),
+        saltProfile: system.saltProfile ?? this.inferSaltProfile(system.starType),
+        saltOutput: this.baseSaltOutput(system.saltProfile, system.starType),
         metalRichness: system.metalRichness,
       },
     };
@@ -945,7 +1006,7 @@ class SimulationEngine {
     }
   }
 
-  private scheduleProbeSightings(date: string, fleet: FleetState, routeId: string): void {
+  private scheduleProbeSightings(date: string, fleet: FleetState, segmentIds: string[]): void {
     for (const probe of this.probes.values()) {
       if (probe.status !== "deployed" || probe.factionId === fleet.factionId || probe.durability <= 0) {
         continue;
@@ -954,12 +1015,20 @@ class SimulationEngine {
       let observedAt: string | null = null;
       let possibleDestinations: string[] = [];
 
-      if (probe.watchedRouteId && probe.watchedRouteId === routeId) {
+      const watchedStarlaneId = probe.watchedStarlaneId ?? probe.watchedRouteId;
+      if (watchedStarlaneId && segmentIds.includes(watchedStarlaneId)) {
         const arrival = fleet.arrivalDate ? diffDays(date, fleet.arrivalDate) : 0;
         observedAt = addDays(date, Math.max(1, Math.floor(arrival / 2)));
         possibleDestinations = fleet.routeHeading
           ? this.graph.getPossibleDestinationsFromHeading(fleet.originSystemId!, fleet.routeHeading)
           : [fleet.destinationSystemId!];
+      } else if (
+        probe.watchedCorridorSystemId &&
+        fleet.travelPathSystemIds?.includes(probe.watchedCorridorSystemId)
+      ) {
+        const arrival = fleet.arrivalDate ? diffDays(date, fleet.arrivalDate) : 0;
+        observedAt = addDays(date, Math.max(1, Math.floor(arrival / 2)));
+        possibleDestinations = [fleet.destinationSystemId!];
       } else if (
         probe.watchedSystemApproachId &&
         probe.watchedSystemApproachId === fleet.destinationSystemId &&
@@ -1004,6 +1073,8 @@ class SimulationEngine {
           possibleDestinations,
           content: {
             watchedRouteId: probe.watchedRouteId,
+            watchedStarlaneId: probe.watchedStarlaneId,
+            watchedCorridorSystemId: probe.watchedCorridorSystemId,
             watchedSystemApproachId: probe.watchedSystemApproachId,
           },
         },
@@ -1051,6 +1122,7 @@ class SimulationEngine {
       systems.set(system.id, {
         systemId: system.id,
         starType: system.starType,
+        saltProfile: system.saltProfile,
         metalRichness: system.metalRichness,
         knownOwnerId: system.ownerId,
         knownShips: this.totalShipsAtSystem(system.id),
@@ -1068,7 +1140,11 @@ class SimulationEngine {
           threatScore: 0,
         };
         current.starType = current.starType ?? target.starType;
+        current.saltProfile = current.saltProfile ?? target.saltProfile;
         current.metalRichness = current.metalRichness ?? target.metalRichness;
+        if (current.knownOwnerId === undefined && target.ownerId === null) {
+          current.knownOwnerId = null;
+        }
         current.routeOptions.push({
           originSystemId: system.id,
           distance: neighbor.distance,
@@ -1141,6 +1217,9 @@ class SimulationEngine {
         }
         if (typeof report.content.starType === "string") {
           current.starType = report.content.starType as SystemState["starType"];
+        }
+        if (typeof report.content.saltProfile === "string") {
+          current.saltProfile = report.content.saltProfile as SystemState["saltProfile"];
         }
         if (typeof report.content.metalRichness === "string") {
           current.metalRichness = report.content.metalRichness as SystemState["metalRichness"];
@@ -1543,7 +1622,7 @@ class SimulationEngine {
       if (system.systemId === perceived.homeSystemId || system.knownOwnerId === perceived.factionId) {
         continue;
       }
-      if (system.knownOwnerId && system.knownOwnerId !== perceived.factionId) {
+      if (system.knownOwnerId !== null) {
         continue;
       }
       if (this.hasFriendlyPresence(system.systemId, perceived.factionId) || this.hasFriendlyInboundFleet(system.systemId, perceived.factionId)) {
@@ -1560,7 +1639,7 @@ class SimulationEngine {
       const actualSystem = this.requireSystem(system.systemId);
       const knownDefense = system.knownDefense ?? 1;
       const score =
-        this.baseSaltOutput(system.starType ?? actualSystem.starType) * 3 +
+        this.baseSaltOutput(system.saltProfile ?? actualSystem.saltProfile, system.starType ?? actualSystem.starType) * 3 +
         this.baseMetalOutput(system.metalRichness ?? actualSystem.metalRichness) * 2 -
         bestRoute.distance * 2 -
         knownDefense * 3 -
@@ -1610,7 +1689,7 @@ class SimulationEngine {
       const knownDefense = intel.knownDefense ?? 1;
       const defenderPower = knownShips + knownDefense * DEFENSE_POWER;
       const concentrationScore =
-        this.baseSaltOutput(intel.starType ?? actualSystem.starType) * 4 +
+        this.baseSaltOutput(intel.saltProfile ?? actualSystem.saltProfile, intel.starType ?? actualSystem.starType) * 4 +
         this.baseMetalOutput(intel.metalRichness ?? actualSystem.metalRichness) * 2 -
         defenderPower * 2 -
         route.distance +
@@ -1727,6 +1806,7 @@ class SimulationEngine {
       case "resupply":
         return this.requireSystem(systemId).ownerId === fleet.factionId ? "resupply" : "hold";
       case "trade":
+      case "blockade":
         return "hold";
     }
   }
@@ -1832,6 +1912,184 @@ class SimulationEngine {
       system.saltStockpile -= amount;
       fleet.cargoSalt += amount;
     }
+  }
+
+  private touchBattleState(date: string, systemId: string, factionsPresent: string[]): BattleState {
+    const existing = this.battleStates.get(systemId);
+    if (!existing) {
+      const created: BattleState = {
+        startDate: date,
+        seenFleetIdsByFaction: new Map(),
+        lastReinforcementDateByFaction: new Map(),
+      };
+      for (const factionId of factionsPresent) {
+        created.seenFleetIdsByFaction.set(factionId, this.stationedFleetIds(systemId, factionId));
+      }
+      this.battleStates.set(systemId, created);
+      return created;
+    }
+
+    for (const factionId of factionsPresent) {
+      const seen = existing.seenFleetIdsByFaction.get(factionId) ?? new Set<string>();
+      const currentIds = this.stationedFleetIds(systemId, factionId);
+      const reinforcementArrived = [...currentIds].some((fleetId) => !seen.has(fleetId));
+      if (reinforcementArrived) {
+        existing.lastReinforcementDateByFaction.set(factionId, date);
+      }
+      existing.seenFleetIdsByFaction.set(factionId, new Set([...seen, ...currentIds]));
+    }
+
+    for (const knownFactionId of [...existing.seenFleetIdsByFaction.keys()]) {
+      if (!factionsPresent.includes(knownFactionId)) {
+        existing.seenFleetIdsByFaction.delete(knownFactionId);
+        existing.lastReinforcementDateByFaction.delete(knownFactionId);
+      }
+    }
+
+    return existing;
+  }
+
+  private hasActiveFlankBonus(battleState: BattleState, factionId: string, date: string): boolean {
+    const reinforcementDate = battleState.lastReinforcementDateByFaction.get(factionId);
+    if (!reinforcementDate) {
+      return false;
+    }
+    return diffDays(reinforcementDate, date) < FLANK_DURATION_DAYS;
+  }
+
+  private stationedFleetIds(systemId: string, factionId: string): Set<string> {
+    return new Set(
+      [...this.fleets.values()]
+        .filter(
+          (fleet) =>
+            fleet.status === "stationed"
+            && fleet.currentSystemId === systemId
+            && fleet.factionId === factionId
+            && fleet.ships > 0,
+        )
+        .map((fleet) => fleet.id),
+    );
+  }
+
+  private fleetCombatPower(systemId: string, factionId: string): number {
+    return [...this.fleets.values()]
+      .filter(
+        (fleet) =>
+          fleet.status === "stationed"
+          && fleet.currentSystemId === systemId
+          && fleet.factionId === factionId
+          && fleet.ships > 0,
+      )
+      .reduce((total, fleet) => {
+        const penalty =
+          fleet.interceptedCombatDaysRemaining && fleet.interceptedCombatDaysRemaining > 0
+            ? 1 - INTERCEPTED_DEPLOYMENT_PENALTY
+            : 1;
+        return total + fleet.ships * penalty;
+      }, 0);
+  }
+
+  private consumeInterceptionPenalty(systemId: string, factionId: string): void {
+    for (const fleet of this.fleets.values()) {
+      if (
+        fleet.status !== "stationed"
+        || fleet.currentSystemId !== systemId
+        || fleet.factionId !== factionId
+        || !fleet.interceptedCombatDaysRemaining
+      ) {
+        continue;
+      }
+
+      fleet.interceptedCombatDaysRemaining = Math.max(0, fleet.interceptedCombatDaysRemaining - 1);
+      if (fleet.interceptedCombatDaysRemaining === 0) {
+        fleet.interceptedByFactionId = undefined;
+      }
+    }
+  }
+
+  private applyBlockadeInterception(
+    date: string,
+    fleet: FleetState,
+    pathSystemIds: string[],
+    segmentIds: string[],
+  ): void {
+    if (segmentIds.length === 0) {
+      return;
+    }
+
+    for (let index = 0; index < segmentIds.length; index += 1) {
+      const segmentId = segmentIds[index];
+      if (!segmentId.startsWith("lane:")) {
+        continue;
+      }
+
+      const fromSystemId = pathSystemIds[index];
+      const toSystemId = pathSystemIds[index + 1];
+      if (!fromSystemId || !toSystemId) {
+        continue;
+      }
+
+      const blockadingFactionId =
+        this.blockadingFactionAtSystem(fromSystemId, fleet.factionId)
+        ?? this.blockadingFactionAtSystem(toSystemId, fleet.factionId);
+      if (!blockadingFactionId) {
+        continue;
+      }
+
+      fleet.interceptedCombatDaysRemaining = Math.max(
+        fleet.interceptedCombatDaysRemaining ?? 0,
+        INTERCEPTED_PENALTY_DURATION,
+      );
+      fleet.interceptedByFactionId = blockadingFactionId;
+      this.log.push(
+        `${date}: fleet ${fleet.id} was intercepted on ${segmentId} by ${blockadingFactionId}`,
+      );
+      return;
+    }
+  }
+
+  private blockadingFactionAtSystem(systemId: string, targetFactionId: string): string | null {
+    const hostileBlockader = [...this.fleets.values()].find(
+      (fleet) =>
+        fleet.status === "stationed"
+        && fleet.currentSystemId === systemId
+        && fleet.factionId !== targetFactionId
+        && fleet.mission === "blockade"
+        && fleet.ships > 0,
+    );
+    return hostileBlockader?.factionId ?? null;
+  }
+
+  private hasBlockadedNearestSupportSystem(systemId: string, factionId: string): boolean {
+    const nearestSupport = this.nearestFriendlySupportSystem(systemId, factionId);
+    if (!nearestSupport) {
+      return false;
+    }
+    return this.blockadingFactionAtSystem(nearestSupport, factionId) !== null;
+  }
+
+  private nearestFriendlySupportSystem(systemId: string, factionId: string): string | null {
+    let bestSystemId: string | null = null;
+    let bestTravelDays = Number.POSITIVE_INFINITY;
+
+    for (const system of this.systems.values()) {
+      if (system.id === systemId || system.ownerId !== factionId) {
+        continue;
+      }
+      const plan = this.safePlan(systemId, system.id);
+      if (!plan) {
+        continue;
+      }
+      if (
+        plan.travelDays < bestTravelDays
+        || (plan.travelDays === bestTravelDays && (bestSystemId === null || system.id.localeCompare(bestSystemId) < 0))
+      ) {
+        bestSystemId = system.id;
+        bestTravelDays = plan.travelDays;
+      }
+    }
+
+    return bestSystemId;
   }
 
   private applyShipLosses(systemId: string, factionId: string, losses: number): void {
@@ -2022,16 +2280,45 @@ class SimulationEngine {
     return ceil(routeDistance * this.effectiveMass(ships, cargoSalt, metals));
   }
 
-  private baseSaltOutput(starType: SystemState["starType"]): number {
+  private inferSaltProfile(starType: SystemState["starType"]): NonNullable<SystemState["saltProfile"]> {
     switch (starType) {
       case "red_dwarf":
-        return 2;
+        return "trace";
       case "yellow_star":
-        return 4;
+        return "productive";
       case "white_blue_star":
-        return 6;
+        return "major";
       case "giant_or_exotic":
-        return 8;
+        return "major";
+    }
+  }
+
+  private baseSaltOutput(
+    saltProfile: SystemState["saltProfile"] | undefined,
+    starType: SystemState["starType"],
+  ): number {
+    if (saltProfile === undefined) {
+      switch (starType) {
+        case "red_dwarf":
+          return 2;
+        case "yellow_star":
+          return 4;
+        case "white_blue_star":
+          return 6;
+        case "giant_or_exotic":
+          return 8;
+      }
+    }
+
+    switch (saltProfile) {
+      case "none":
+        return 0;
+      case "trace":
+        return 1;
+      case "productive":
+        return 3;
+      case "major":
+        return 6;
     }
   }
 

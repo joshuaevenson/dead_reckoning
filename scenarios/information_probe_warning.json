@@ -19,6 +19,7 @@
     {
       "id": "home",
       "name": "Home",
+      "position": { "x": 0, "y": 0 },
       "starType": "yellow_star",
       "metalRichness": "standard",
       "ownerId": "blue",
@@ -34,6 +35,7 @@
     {
       "id": "frontier_west",
       "name": "Frontier West",
+      "position": { "x": 2, "y": 2 },
       "starType": "yellow_star",
       "metalRichness": "rich",
       "ownerId": "blue",
@@ -49,6 +51,7 @@
     {
       "id": "frontier_east",
       "name": "Frontier East",
+      "position": { "x": 2, "y": -2 },
       "starType": "yellow_star",
       "metalRichness": "standard",
       "ownerId": "blue",
@@ -64,6 +67,7 @@
     {
       "id": "enemy_home",
       "name": "Enemy Home",
+      "position": { "x": 2, "y": 0 },
       "starType": "yellow_star",
       "metalRichness": "standard",
       "ownerId": "red",
@@ -79,6 +83,7 @@
     {
       "id": "watch",
       "name": "Watchpoint",
+      "position": { "x": 1, "y": 0 },
       "starType": "red_dwarf",
       "metalRichness": "poor",
       "ownerId": null,
