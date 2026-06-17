@@ -26,6 +26,7 @@ import type {
   SimulationSnapshot,
   SnapshotFactionView,
   SnapshotFleetView,
+  SnapshotProbeView,
   SnapshotSystemView,
   SystemState,
 } from "./types.js";
@@ -708,6 +709,21 @@ class SimulationEngine {
       };
     }
 
+    const probes: Record<string, SnapshotProbeView> = {};
+    for (const probe of this.probes.values()) {
+      if (probe.status === "destroyed") {
+        continue;
+      }
+      probes[probe.id] = {
+        factionId: probe.factionId,
+        status: probe.status,
+        currentSystemId: probe.currentSystemId,
+        anchorSystemId: probe.anchorSystemId,
+        watchedRouteId: probe.watchedRouteId,
+        watchedSystemApproachId: probe.watchedSystemApproachId,
+      };
+    }
+
     const factions: Record<string, SnapshotFactionView> = {};
     for (const faction of this.factions.values()) {
       const ownedSystems = [...this.systems.values()].filter((system) => system.ownerId === faction.id);
@@ -726,6 +742,7 @@ class SimulationEngine {
       date,
       systems,
       fleets,
+      probes,
       factions,
     });
   }

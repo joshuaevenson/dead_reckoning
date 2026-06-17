@@ -188,6 +188,23 @@ body {
   border-radius: 16px;
 }
 
+.system-probe-callout {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(120, 180, 255, 0.08);
+  background: rgba(10, 22, 34, 0.84);
+}
+
+.system-probe-copy {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
 .system-name {
   font-size: 1rem;
   font-weight: 700;

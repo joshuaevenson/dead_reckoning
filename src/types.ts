@@ -328,6 +328,15 @@ export interface SnapshotFleetView {
   mission: Mission;
 }
 
+export interface SnapshotProbeView {
+  factionId: string;
+  status: ProbeState["status"];
+  currentSystemId?: string;
+  anchorSystemId: string;
+  watchedRouteId?: string;
+  watchedSystemApproachId?: string;
+}
+
 export interface SnapshotFactionView {
   reportCount: number;
   ownedSystems: number;
@@ -340,6 +349,7 @@ export interface SimulationSnapshot {
   date: string;
   systems: Record<string, SnapshotSystemView>;
   fleets: Record<string, SnapshotFleetView>;
+  probes: Record<string, SnapshotProbeView>;
   factions: Record<string, SnapshotFactionView>;
 }
 

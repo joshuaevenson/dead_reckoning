@@ -124,6 +124,13 @@ function fleetEntries() {
   }));
 }
 
+function probeEntries() {
+  return Object.entries(latestSnapshot()?.probes ?? {}).map(([probeId, probe]) => ({
+    probeId,
+    ...probe,
+  }));
+}
+
 function fleetsAtSystem(systemId) {
   return fleetEntries().filter((fleet) => fleet.currentSystemId === systemId);
 }
@@ -289,10 +296,16 @@ const anchorOptions = computed(() => {
     return [];
   }
 
-  return neighboringRoutes(selectedSystem.value.system.id).map((route) => ({
-    label: translateSystemId(route.a === selectedSystem.value.system.id ? route.b : route.a),
-    value: route.a === selectedSystem.value.system.id ? route.b : route.a,
-  }));
+  return (scenario.value?.systems ?? [])
+    .filter(
+      (system) =>
+        system.id !== selectedSystem.value.system.id
+        && routePlan(selectedSystem.value.system.id, system.id) !== null,
+    )
+    .map((system) => ({
+      label: system.name,
+      value: system.id,
+    }));
 });
 
 const summaryCards = computed(() => {
@@ -311,9 +324,8 @@ const summaryCards = computed(() => {
   return [
     { label: "Salt", value: formatNumber(currentSeat.value.snapshot.totalSaltStockpile) },
     { label: "Metals", value: formatNumber(currentSeat.value.snapshot.totalMetalStockpile) },
-    { label: "Owned", value: formatNumber(currentSeat.value.snapshot.ownedSystems) },
+    { label: "Ships", value: formatNumber(currentSeat.value.snapshot.totalShips) },
     { label: "Transit", value: formatNumber(transitCount) },
-    { label: "Reports", value: formatNumber(feedItems.value.length) },
     { label: "Contested", value: formatNumber(contested) },
   ];
 });
@@ -401,6 +413,13 @@ const selectedSystemOverview = computed(() => {
   }
 
   const { system, snapshot } = selectedSystem.value;
+  const hasProbeCoverage = probeEntries().some(
+    (probe) =>
+      probe.factionId === currentSeat.value.faction.id
+      && probe.status === "deployed"
+      && probe.anchorSystemId === system.id,
+  );
+  const canSeeLocalIntel = snapshot.ownerId === currentSeat.value.faction.id || hasProbeCoverage;
   const friendlyShips = totalShipsAtSystem(system.id, currentSeat.value.faction.id);
   const enemyShips = fleetsAtSystem(system.id)
     .filter((fleet) => fleet.factionId !== currentSeat.value.faction.id)
@@ -408,6 +427,8 @@ const selectedSystemOverview = computed(() => {
 
   return {
     title: system.name,
+    canSeeLocalIntel,
+    needsProbe: !canSeeLocalIntel,
     owner:
       snapshot.ownerId === currentSeat.value.faction.id
         ? "Friendly Control"
@@ -417,10 +438,23 @@ const selectedSystemOverview = computed(() => {
     starText: `${titleCase(system.starType)} star`,
     metalText: `${titleCase(system.metalRichness)} metals`,
     facts: [
-      { label: "Defense", value: formatNumber(snapshot.defense) },
-      { label: "Ships", value: `${formatNumber(friendlyShips)} friendly / ${formatNumber(enemyShips)} enemy` },
       { label: "Yield", value: `${STAR_OUTPUT[system.starType]} salt + ${METAL_OUTPUT[system.metalRichness]} metal / day` },
-      { label: "Stores", value: `${formatNumber(snapshot.saltStockpile)} salt + ${formatNumber(snapshot.metalStockpile)} metal` },
+      {
+        label: "Defense",
+        value: canSeeLocalIntel ? formatNumber(snapshot.defense) : "Probe required",
+      },
+      {
+        label: "Ships",
+        value: canSeeLocalIntel
+          ? `${formatNumber(friendlyShips)} friendly / ${formatNumber(enemyShips)} enemy`
+          : "Probe required",
+      },
+      {
+        label: "Stores",
+        value: canSeeLocalIntel
+          ? `${formatNumber(snapshot.saltStockpile)} salt + ${formatNumber(snapshot.metalStockpile)} metal`
+          : "Probe required",
+      },
     ],
   };
 });
@@ -823,6 +857,26 @@ function centerMapOnSystem(systemId) {
   });
 }
 
+function prepareProbeForSelectedSystem() {
+  if (!selectedSystem.value || !currentSeat.value) {
+    return;
+  }
+
+  const targetSystemId = selectedSystem.value.system.id;
+  const candidateOrigins = ownedSystems.value
+    .map((system) => ({
+      systemId: system.id,
+      plan: routePlan(system.id, targetSystemId),
+    }))
+    .filter((candidate) => candidate.plan !== null)
+    .sort((left, right) => left.plan.travelDays - right.plan.travelDays);
+
+  const origin = candidateOrigins[0]?.systemId ?? currentSeat.value.faction.homeSystemId;
+  activeAction.value = "deploy_probe";
+  orderDraft.value.anchorId = targetSystemId;
+  selectSystem(origin);
+}
+
 async function loadScenario(id) {
   const response = await fetch(`/api/scenarios/${encodeURIComponent(id)}`);
   if (!response.ok) {
@@ -948,6 +1002,18 @@ onMounted(async () => {
                 <span class="system-fact-label">{{ fact.label }}</span>
                 <span class="system-fact-value">{{ fact.value }}</span>
               </div>
+            </div>
+
+            <div v-if="selectedSystemOverview.needsProbe" class="system-probe-callout">
+              <div class="system-probe-copy">
+                Exact defense, ships, and stores are unknown here until a probe is on station.
+              </div>
+              <Button
+                label="Launch Probe"
+                icon="pi pi-search"
+                severity="contrast"
+                @click="prepareProbeForSelectedSystem"
+              />
             </div>
           </div>
 
