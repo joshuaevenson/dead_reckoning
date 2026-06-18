@@ -25,7 +25,7 @@
       "metalRichness": "standard",
       "starlaneLinks": ["screen"],
       "ownerId": "blue",
-      "saltStockpile": 120,
+      "saltStockpile": 150,
       "metalStockpile": 60,
       "infrastructure": 8,
       "defense": 3,
@@ -107,7 +107,7 @@
       "at": "2240-06-01",
       "path": "fleets.fleet-1.interceptedCombatDaysRemaining",
       "op": "eq",
-      "value": 2
+      "value": 3
     },
     {
       "at": "2240-06-01",

@@ -1,5 +1,5 @@
 {
-  "name": "napoleon_beats_bad_commander_with_extra_salt",
+  "name": "extra_salt_still_needs_better_maneuver",
   "seed": 19,
   "startDate": "2240-03-01",
   "durationDays": 26,
@@ -184,7 +184,7 @@
       "at": "2240-03-26",
       "path": "systems.west.ownerId",
       "op": "eq",
-      "value": "napoleon"
+      "value": "bad"
     },
     {
       "at": "2240-03-26",
@@ -196,7 +196,7 @@
       "at": "2240-03-26",
       "path": "factions.napoleon.ownedSystems",
       "op": "gte",
-      "value": 2
+      "value": 1
     }
   ]
 }

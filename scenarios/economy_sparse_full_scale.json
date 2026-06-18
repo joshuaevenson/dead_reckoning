@@ -1,0 +1,427 @@
+{
+  "name": "economy_sparse_full_scale",
+  "seed": 43,
+  "startDate": "2240-07-01",
+  "durationDays": 90,
+  "commanderProfiles": [
+    {
+      "id": "disciplined",
+      "kind": "frontier_expander",
+      "options": {
+        "preferredSystems": 5,
+        "claimFleetShips": 4,
+        "homeReserveShips": 3,
+        "frontierDefenseTarget": 1,
+        "maxExpansionDistance": 6
+      }
+    },
+    {
+      "id": "chatty",
+      "kind": "chatty_frontier",
+      "options": {
+        "preferredSystems": 5,
+        "claimFleetShips": 4,
+        "homeReserveShips": 3,
+        "frontierDefenseTarget": 1,
+        "maxExpansionDistance": 6
+      }
+    }
+  ],
+  "factions": [
+    {
+      "id": "disc",
+      "name": "Aster Crown",
+      "homeSystemId": "disc_home",
+      "commanderProfileId": "disciplined"
+    },
+    {
+      "id": "chat",
+      "name": "Verdant Wake",
+      "homeSystemId": "chat_home",
+      "commanderProfileId": "chatty"
+    }
+  ],
+  "systems": [
+    {
+      "id": "disc_home",
+      "name": "Sol",
+      "position": { "x": 0, "y": 0 },
+      "starType": "yellow_star",
+      "saltProfile": "major",
+      "metalRichness": "exceptional",
+      "starlaneLinks": ["disc_gate"],
+      "ownerId": "disc",
+      "saltStockpile": 180,
+      "metalStockpile": 160,
+      "probeStockpile": 2,
+      "infrastructure": 10,
+      "defense": 8,
+      "controlAgeDays": 400,
+      "garrisonShips": {
+        "disc": 8
+      }
+    },
+    {
+      "id": "disc_gate",
+      "name": "Barnard's Star",
+      "position": { "x": 2, "y": 0 },
+      "starType": "red_dwarf",
+      "saltProfile": "none",
+      "metalRichness": "standard",
+      "starlaneLinks": ["disc_home", "disc_basin", "disc_outpost"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "probeStockpile": 0,
+      "infrastructure": 1,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "disc_outpost",
+      "name": "Ross 154",
+      "position": { "x": 2, "y": 2 },
+      "starType": "red_dwarf",
+      "saltProfile": "none",
+      "metalRichness": "rich",
+      "starlaneLinks": ["disc_gate"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "probeStockpile": 0,
+      "infrastructure": 1,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "disc_basin",
+      "name": "Lalande 21185",
+      "position": { "x": 4, "y": 0 },
+      "starType": "yellow_star",
+      "saltProfile": "productive",
+      "metalRichness": "standard",
+      "starlaneLinks": ["disc_gate", "center_screen", "disc_ore"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "probeStockpile": 0,
+      "infrastructure": 2,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "disc_ore",
+      "name": "Sirius",
+      "position": { "x": 4, "y": 2 },
+      "starType": "white_blue_star",
+      "saltProfile": "none",
+      "metalRichness": "exceptional",
+      "starlaneLinks": ["disc_basin"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "probeStockpile": 0,
+      "infrastructure": 1,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "center_screen",
+      "name": "Procyon",
+      "position": { "x": 6, "y": 0 },
+      "starType": "red_dwarf",
+      "saltProfile": "none",
+      "metalRichness": "poor",
+      "starlaneLinks": ["disc_basin", "salt_crown", "center_north", "center_south"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "probeStockpile": 0,
+      "infrastructure": 2,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "center_north",
+      "name": "Vega",
+      "position": { "x": 6, "y": 2 },
+      "starType": "white_blue_star",
+      "saltProfile": "none",
+      "metalRichness": "rich",
+      "starlaneLinks": ["center_screen"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "probeStockpile": 0,
+      "infrastructure": 1,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "center_south",
+      "name": "Fomalhaut",
+      "position": { "x": 6, "y": -2 },
+      "starType": "red_dwarf",
+      "saltProfile": "none",
+      "metalRichness": "standard",
+      "starlaneLinks": ["center_screen"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "probeStockpile": 0,
+      "infrastructure": 1,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "salt_crown",
+      "name": "Epsilon Eridani",
+      "position": { "x": 8, "y": 0 },
+      "starType": "yellow_star",
+      "saltProfile": "productive",
+      "metalRichness": "rich",
+      "starlaneLinks": ["center_screen", "chat_basin"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "probeStockpile": 0,
+      "infrastructure": 2,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "chat_basin",
+      "name": "61 Cygni",
+      "position": { "x": 10, "y": 0 },
+      "starType": "yellow_star",
+      "saltProfile": "productive",
+      "metalRichness": "standard",
+      "starlaneLinks": ["salt_crown", "chat_gate", "chat_ore"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "probeStockpile": 0,
+      "infrastructure": 2,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "chat_ore",
+      "name": "Altair",
+      "position": { "x": 10, "y": -2 },
+      "starType": "white_blue_star",
+      "saltProfile": "none",
+      "metalRichness": "exceptional",
+      "starlaneLinks": ["chat_basin"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "probeStockpile": 0,
+      "infrastructure": 1,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "chat_gate",
+      "name": "Wolf 359",
+      "position": { "x": 12, "y": 0 },
+      "starType": "red_dwarf",
+      "saltProfile": "none",
+      "metalRichness": "standard",
+      "starlaneLinks": ["chat_basin", "chat_home", "chat_outpost"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "probeStockpile": 0,
+      "infrastructure": 1,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "chat_outpost",
+      "name": "Groombridge 34",
+      "position": { "x": 12, "y": -2 },
+      "starType": "red_dwarf",
+      "saltProfile": "none",
+      "metalRichness": "rich",
+      "starlaneLinks": ["chat_gate"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "probeStockpile": 0,
+      "infrastructure": 1,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "chat_home",
+      "name": "Tau Ceti",
+      "position": { "x": 14, "y": 0 },
+      "starType": "yellow_star",
+      "saltProfile": "major",
+      "metalRichness": "exceptional",
+      "starlaneLinks": ["chat_gate"],
+      "ownerId": "chat",
+      "saltStockpile": 180,
+      "metalStockpile": 160,
+      "probeStockpile": 2,
+      "infrastructure": 10,
+      "defense": 8,
+      "controlAgeDays": 400,
+      "garrisonShips": {
+        "chat": 8
+      }
+    }
+  ],
+  "routes": [
+    {
+      "id": "disc-home-gate",
+      "a": "disc_home",
+      "b": "disc_gate",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "frontier",
+      "headingFromB": "homeward"
+    },
+    {
+      "id": "disc-gate-basin",
+      "a": "disc_gate",
+      "b": "disc_basin",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "basin",
+      "headingFromB": "gate"
+    },
+    {
+      "id": "disc-gate-outpost",
+      "a": "disc_gate",
+      "b": "disc_outpost",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "outpost",
+      "headingFromB": "gate"
+    },
+    {
+      "id": "disc-basin-ore",
+      "a": "disc_basin",
+      "b": "disc_ore",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "ore",
+      "headingFromB": "basin"
+    },
+    {
+      "id": "disc-basin-screen",
+      "a": "disc_basin",
+      "b": "center_screen",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "screen",
+      "headingFromB": "basin"
+    },
+    {
+      "id": "screen-north",
+      "a": "center_screen",
+      "b": "center_north",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "north",
+      "headingFromB": "screen"
+    },
+    {
+      "id": "screen-south",
+      "a": "center_screen",
+      "b": "center_south",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "south",
+      "headingFromB": "screen"
+    },
+    {
+      "id": "screen-crown",
+      "a": "center_screen",
+      "b": "salt_crown",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "crown",
+      "headingFromB": "screen"
+    },
+    {
+      "id": "crown-chat-basin",
+      "a": "salt_crown",
+      "b": "chat_basin",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "chat",
+      "headingFromB": "crown"
+    },
+    {
+      "id": "chat-basin-ore",
+      "a": "chat_basin",
+      "b": "chat_ore",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "ore",
+      "headingFromB": "basin"
+    },
+    {
+      "id": "chat-basin-gate",
+      "a": "chat_basin",
+      "b": "chat_gate",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "gate",
+      "headingFromB": "basin"
+    },
+    {
+      "id": "chat-gate-home",
+      "a": "chat_gate",
+      "b": "chat_home",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "homeward",
+      "headingFromB": "frontier"
+    },
+    {
+      "id": "chat-gate-outpost",
+      "a": "chat_gate",
+      "b": "chat_outpost",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "outpost",
+      "headingFromB": "gate"
+    }
+  ],
+  "expectations": [
+    {
+      "at": "2240-09-28",
+      "path": "factions.disc.ownedSystems",
+      "op": "gte",
+      "value": 3
+    },
+    {
+      "at": "2240-09-28",
+      "path": "factions.chat.ownedSystems",
+      "op": "gte",
+      "value": 2
+    },
+    {
+      "at": "2240-09-28",
+      "path": "factions.chat.reportCount",
+      "op": "gte",
+      "value": 20
+    },
+    {
+      "at": "2240-09-28",
+      "path": "systems.disc_ore.saltStockpile",
+      "op": "eq",
+      "value": 0
+    },
+    {
+      "at": "2240-09-28",
+      "path": "systems.disc_ore.metalStockpile",
+      "op": "gte",
+      "value": 0
+    }
+  ]
+}

@@ -84,7 +84,7 @@
       "at": "2240-01-10",
       "path": "systems.frontier.saltStockpile",
       "op": "gte",
-      "value": 12
+      "value": 4
     }
   ]
 }

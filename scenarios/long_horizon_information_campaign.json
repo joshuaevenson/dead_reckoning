@@ -1,0 +1,362 @@
+{
+  "name": "long_horizon_information_campaign",
+  "seed": 59,
+  "startDate": "2241-01-01",
+  "durationDays": 110,
+  "commanderProfiles": [
+    {
+      "id": "napoleon",
+      "kind": "napoleonic",
+      "options": {
+        "homeReserveShips": 5,
+        "minimumAttackShips": 7,
+        "preferredSystems": 3,
+        "blockadeShips": 3
+      }
+    },
+    {
+      "id": "bad",
+      "kind": "bad_commander",
+      "options": {
+        "borderShipTarget": 6,
+        "homeDefenseTarget": 8,
+        "panicPigeonThreshold": 1
+      }
+    }
+  ],
+  "factions": [
+    {
+      "id": "napoleon",
+      "name": "Aster Crown",
+      "homeSystemId": "n_home",
+      "commanderProfileId": "napoleon"
+    },
+    {
+      "id": "bad",
+      "name": "Crimson Wake",
+      "homeSystemId": "b_home",
+      "commanderProfileId": "bad"
+    }
+  ],
+  "initialReports": [
+    {
+      "factionId": "napoleon",
+      "type": "intel",
+      "observedAt": "2241-01-01",
+      "sourceSystemId": "n_home",
+      "content": {
+        "systemId": "b_basin",
+        "ownerId": "bad",
+        "ships": 4,
+        "defense": 1
+      }
+    },
+    {
+      "factionId": "napoleon",
+      "type": "intel",
+      "observedAt": "2241-01-01",
+      "sourceSystemId": "n_home",
+      "content": {
+        "systemId": "crown",
+        "ownerId": "bad",
+        "ships": 2,
+        "defense": 0
+      }
+    }
+  ],
+  "systems": [
+    {
+      "id": "n_home",
+      "name": "Sol",
+      "position": { "x": 0, "y": 0 },
+      "starType": "yellow_star",
+      "saltProfile": "major",
+      "metalRichness": "exceptional",
+      "starlaneLinks": ["n_gate"],
+      "ownerId": "napoleon",
+      "saltStockpile": 220,
+      "metalStockpile": 180,
+      "probeStockpile": 2,
+      "infrastructure": 10,
+      "defense": 8,
+      "controlAgeDays": 500,
+      "garrisonShips": {
+        "napoleon": 16
+      }
+    },
+    {
+      "id": "n_gate",
+      "name": "Barnard's Star",
+      "position": { "x": 2, "y": 0 },
+      "starType": "red_dwarf",
+      "saltProfile": "none",
+      "metalRichness": "standard",
+      "starlaneLinks": ["n_home", "n_basin"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "probeStockpile": 0,
+      "infrastructure": 1,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "n_basin",
+      "name": "Lalande 21185",
+      "position": { "x": 4, "y": 0 },
+      "starType": "yellow_star",
+      "saltProfile": "productive",
+      "metalRichness": "standard",
+      "starlaneLinks": ["n_gate", "screen", "n_ore"],
+      "ownerId": "napoleon",
+      "saltStockpile": 35,
+      "metalStockpile": 26,
+      "probeStockpile": 0,
+      "infrastructure": 3,
+      "defense": 1,
+      "controlAgeDays": 120,
+      "garrisonShips": {
+        "napoleon": 4
+      }
+    },
+    {
+      "id": "n_ore",
+      "name": "Sirius",
+      "position": { "x": 4, "y": 2 },
+      "starType": "white_blue_star",
+      "saltProfile": "none",
+      "metalRichness": "exceptional",
+      "starlaneLinks": ["n_basin"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "probeStockpile": 0,
+      "infrastructure": 1,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "screen",
+      "name": "Procyon",
+      "position": { "x": 6, "y": 0 },
+      "starType": "red_dwarf",
+      "saltProfile": "none",
+      "metalRichness": "poor",
+      "starlaneLinks": ["n_basin", "crown"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "probeStockpile": 0,
+      "infrastructure": 2,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "crown",
+      "name": "Epsilon Eridani",
+      "position": { "x": 8, "y": 0 },
+      "starType": "yellow_star",
+      "saltProfile": "productive",
+      "metalRichness": "rich",
+      "starlaneLinks": ["screen", "b_basin"],
+      "ownerId": "bad",
+      "saltStockpile": 18,
+      "metalStockpile": 18,
+      "probeStockpile": 0,
+      "infrastructure": 2,
+      "defense": 0,
+      "controlAgeDays": 80,
+      "garrisonShips": {
+        "bad": 2
+      }
+    },
+    {
+      "id": "b_basin",
+      "name": "61 Cygni",
+      "position": { "x": 10, "y": 0 },
+      "starType": "yellow_star",
+      "saltProfile": "productive",
+      "metalRichness": "standard",
+      "starlaneLinks": ["crown", "b_gate", "b_ore"],
+      "ownerId": "bad",
+      "saltStockpile": 35,
+      "metalStockpile": 26,
+      "probeStockpile": 0,
+      "infrastructure": 3,
+      "defense": 1,
+      "controlAgeDays": 120,
+      "garrisonShips": {
+        "bad": 4
+      }
+    },
+    {
+      "id": "b_ore",
+      "name": "Altair",
+      "position": { "x": 10, "y": -2 },
+      "starType": "white_blue_star",
+      "saltProfile": "none",
+      "metalRichness": "exceptional",
+      "starlaneLinks": ["b_basin"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "probeStockpile": 0,
+      "infrastructure": 1,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "b_gate",
+      "name": "Wolf 359",
+      "position": { "x": 12, "y": 0 },
+      "starType": "red_dwarf",
+      "saltProfile": "none",
+      "metalRichness": "standard",
+      "starlaneLinks": ["b_basin", "b_home"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "probeStockpile": 0,
+      "infrastructure": 1,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "b_home",
+      "name": "Tau Ceti",
+      "position": { "x": 14, "y": 0 },
+      "starType": "yellow_star",
+      "saltProfile": "major",
+      "metalRichness": "exceptional",
+      "starlaneLinks": ["b_gate"],
+      "ownerId": "bad",
+      "saltStockpile": 240,
+      "metalStockpile": 180,
+      "probeStockpile": 1,
+      "infrastructure": 10,
+      "defense": 8,
+      "controlAgeDays": 500,
+      "garrisonShips": {
+        "bad": 12
+      }
+    }
+  ],
+  "routes": [
+    {
+      "id": "n-home-gate",
+      "a": "n_home",
+      "b": "n_gate",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "frontier",
+      "headingFromB": "homeward"
+    },
+    {
+      "id": "n-gate-basin",
+      "a": "n_gate",
+      "b": "n_basin",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "basin",
+      "headingFromB": "gate"
+    },
+    {
+      "id": "n-basin-ore",
+      "a": "n_basin",
+      "b": "n_ore",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "ore",
+      "headingFromB": "basin"
+    },
+    {
+      "id": "n-basin-screen",
+      "a": "n_basin",
+      "b": "screen",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "screen",
+      "headingFromB": "basin"
+    },
+    {
+      "id": "screen-crown",
+      "a": "screen",
+      "b": "crown",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "crown",
+      "headingFromB": "screen"
+    },
+    {
+      "id": "crown-basin",
+      "a": "crown",
+      "b": "b_basin",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "bad",
+      "headingFromB": "crown"
+    },
+    {
+      "id": "b-basin-ore",
+      "a": "b_basin",
+      "b": "b_ore",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "ore",
+      "headingFromB": "basin"
+    },
+    {
+      "id": "b-basin-gate",
+      "a": "b_basin",
+      "b": "b_gate",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "gate",
+      "headingFromB": "basin"
+    },
+    {
+      "id": "b-gate-home",
+      "a": "b_gate",
+      "b": "b_home",
+      "distance": 2,
+      "travelDays": 2,
+      "headingFromA": "homeward",
+      "headingFromB": "frontier"
+    }
+  ],
+  "commands": [
+    {
+      "type": "launch_fleet",
+      "at": "2241-01-02",
+      "factionId": "bad",
+      "originSystemId": "b_home",
+      "destinationSystemId": "crown",
+      "ships": 4,
+      "mission": "reinforce",
+      "cargoSalt": 0,
+      "metals": 0,
+      "retreatSystemId": "b_home",
+      "name": "Crown Relief"
+    }
+  ],
+  "expectations": [
+    {
+      "at": "2241-04-20",
+      "path": "systems.crown.ownerId",
+      "op": "eq",
+      "value": "bad"
+    },
+    {
+      "at": "2241-04-20",
+      "path": "systems.b_gate.ownerId",
+      "op": "eq",
+      "value": "napoleon"
+    },
+    {
+      "at": "2241-04-20",
+      "path": "factions.bad.reportCount",
+      "op": "gte",
+      "value": 30
+    }
+  ]
+}

@@ -134,6 +134,22 @@ test("frontier expansion playthrough reaches claim then stabilizes the new holdi
   assert.equal(finale.factions.green.ownedSystems, 1);
 });
 
+test("starter constellation exposes a larger live frontier with probes and fleet movement", () => {
+  const scenario = loadScenario("starter_constellation.json");
+  const result = simulateScenario(scenario);
+  const finale = result.snapshots.at(-1);
+
+  assert.equal(result.passed, true);
+  assert.equal(scenario.systems.length > 6, true);
+  assert.equal(Object.keys(finale.probes).length >= 1, true);
+  assert.equal(
+    Object.values(finale.fleets).some((fleet) => fleet.status === "transit"),
+    true,
+  );
+  assert.equal(finale.factions.blue.ownedSystems >= 2, true);
+  assert.equal(finale.factions.green.ownedSystems >= 2, true);
+});
+
 test("probe warning playthrough delivers reconnaissance before the frontier fully falls", () => {
   const scenario = loadScenario("information_probe_warning.json");
   const result = simulateScenario(scenario);
@@ -158,4 +174,44 @@ test("probe warning playthrough delivers reconnaissance before the frontier full
   assert.equal(finale.systems.frontier_west.ownerId, "blue");
   assert.equal(finale.systems.frontier_west.captureProgress > 0, true);
   assert.equal(finale.fleets["fleet-2"].currentSystemId, "frontier_west");
+});
+
+test("sparse full-scale campaign concentrates salt into a few anchor systems and exposes current comms balance", () => {
+  const scenario = loadScenario("economy_sparse_full_scale.json");
+  const result = simulateScenario(scenario);
+  const finale = result.snapshots.at(-1);
+  const saltProducers = scenario.systems.filter((system) => system.saltProfile !== "none");
+  const noSaltSystems = scenario.systems.filter((system) => system.saltProfile === "none");
+  const chatPigeons = result.log.filter((line) => line.includes("chat sent pigeon")).length;
+
+  assert.equal(result.passed, true);
+  assert.equal(noSaltSystems.length > saltProducers.length, true);
+  assert.equal(saltProducers.every((system) => system.id.endsWith("_home") || system.saltProfile === "productive"), true);
+
+  assert.equal(finale.systems.disc_ore.saltStockpile, 0);
+  assert.equal(finale.systems.disc_ore.ownerId, null);
+  assert.equal(finale.systems.chat_ore.ownerId, null);
+  assert.equal(finale.systems.center_screen.ownerId, null);
+
+  assert.equal(chatPigeons >= 6, true);
+  assert.equal(finale.factions.chat.reportCount >= 20, true);
+  assert.equal(finale.factions.chat.totalSaltStockpile > finale.factions.disc.totalSaltStockpile, true);
+  assert.equal(finale.factions.chat.ownedSystems, 2);
+  assert.equal(finale.factions.disc.ownedSystems, 3);
+});
+
+test("long information campaign produces combat around the frontier objective and rewards prepared defense", () => {
+  const scenario = loadScenario("long_horizon_information_campaign.json");
+  const result = simulateScenario(scenario);
+  const finale = result.snapshots.at(-1);
+  const combatLog = result.log.filter((line) => line.includes("combat at crown"));
+  const blockadeLog = result.log.filter((line) => line.includes("screen-") || line.includes("was intercepted"));
+
+  assert.equal(result.passed, true);
+  assert.equal(combatLog.length > 0, true);
+  assert.equal(blockadeLog.length > 0, true);
+  assert.equal(finale.systems.crown.ownerId, "bad");
+  assert.equal(finale.systems.b_gate.ownerId, "napoleon");
+  assert.equal(finale.factions.bad.reportCount >= 20, true);
+  assert.equal(finale.factions.napoleon.reportCount >= 8, true);
 });

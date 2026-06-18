@@ -45,6 +45,21 @@ test("ui state loads scenario through worker and exposes player-facing reports",
   assert.equal(store.starlaneSegments.value.length > 0, true);
 });
 
+test("ui state defaults to the larger starter constellation for local play", async () => {
+  const store = createCommandState({
+    fetchImpl: createWorkerFetch(),
+  });
+
+  await store.loadInitialData();
+  await nextTick();
+
+  assert.equal(store.testHarness.activeScenarioId, "starter_constellation");
+  assert.equal(store.currentSeat.value?.faction.id, "blue");
+  assert.equal(store.world.scenario.systems.length > 6, true);
+  assert.equal(store.starlaneSegments.value.length >= 10, true);
+  assert.equal(store.feedItems.value.length > 0, true);
+});
+
 test("ui state updates probe status and feed immediately after a successful probe launch", async () => {
   const store = createCommandState({
     fetchImpl: createWorkerFetch(),
@@ -65,6 +80,37 @@ test("ui state updates probe status and feed immediately after a successful prob
   assert.equal(store.reconSummary.value.onStation, 1);
   assert.equal(store.reconSummary.value.items.some((item) => item.label === "Tau Ceti" && item.status === "in_transit"), true);
   assert.equal(store.probeMarkers.value.some((marker) => marker.status === "in_transit"), true);
+});
+
+test("ui state tracks workspace navigation and returns to map for command drafting", async () => {
+  const store = createCommandState({
+    fetchImpl: createWorkerFetch(),
+    locationSearch: "?scenario=information_probe_warning&seat=blue",
+  });
+
+  await store.loadInitialData();
+  await nextTick();
+
+  assert.equal(store.ui.activeWorkspace, "map");
+
+  store.setActiveWorkspace("reports");
+  await nextTick();
+  assert.equal(store.ui.activeWorkspace, "reports");
+
+  store.setActiveWorkspace("notebook");
+  await nextTick();
+  assert.equal(store.ui.activeWorkspace, "notebook");
+
+  store.setActiveAction("trade");
+  await nextTick();
+  assert.equal(store.ui.activeWorkspace, "map");
+
+  store.setActiveWorkspace("reports");
+  store.prepareProbeForSystem("enemy_home");
+  await nextTick();
+  assert.equal(store.ui.activeWorkspace, "map");
+  assert.equal(store.ui.activeAction, "deploy_probe");
+  assert.equal(store.ui.orderDraft.anchorId, "enemy_home");
 });
 
 test("ui state allows direct probe travel to distant systems without route gating", async () => {

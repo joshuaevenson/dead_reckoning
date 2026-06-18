@@ -7,22 +7,22 @@ const DIRECT_SALT_MULTIPLIER = 1;
 const STARLANE_TIME_MULTIPLIER = 0.7;
 const STARLANE_SALT_MULTIPLIER = 0.8;
 const STAR_OUTPUT = {
-  red_dwarf: 2,
-  yellow_star: 4,
-  white_blue_star: 7,
-  giant_or_exotic: 10,
+  red_dwarf: 0,
+  yellow_star: 1,
+  white_blue_star: 2,
+  giant_or_exotic: 2,
 };
 const SALT_PROFILE_OUTPUT = {
   none: 0,
   trace: 1,
-  productive: 3,
-  major: 6,
+  productive: 2,
+  major: 5,
 };
 const METAL_OUTPUT = {
   poor: 1,
-  standard: 2,
-  rich: 4,
-  exceptional: 6,
+  standard: 1,
+  rich: 2,
+  exceptional: 4,
 };
 const ORDER_ACTIONS = [
   { key: "attack", label: "Attack", icon: "pi pi-send" },
@@ -31,6 +31,12 @@ const ORDER_ACTIONS = [
   { key: "resupply", label: "Resupply", icon: "pi pi-box" },
   { key: "deploy_probe", label: "Deploy Probe", icon: "pi pi-search" },
   { key: "trade", label: "Trade", icon: "pi pi-sync" },
+];
+const WORKSPACE_VIEWS = [
+  { key: "map", label: "Map", icon: "pi pi-globe" },
+  { key: "reports", label: "Reports", icon: "pi pi-megaphone" },
+  { key: "production", label: "Production", icon: "pi pi-sliders-h" },
+  { key: "notebook", label: "Notebook", icon: "pi pi-book" },
 ];
 const PRODUCTION_FOCUS_OPTIONS = [
   { label: "Build Ships", value: "ships" },
@@ -266,6 +272,7 @@ export function createCommandState(options = {}) {
   const ui = reactive({
     seatFactionId: null,
     selectedSystemId: null,
+    activeWorkspace: "map",
     activeAction: "attack",
     pendingProbeOrders: {},
     plannerLoadedKey: null,
@@ -476,8 +483,8 @@ export function createCommandState(options = {}) {
     return null;
   }
 
-  function effectiveMass(ships, cargoSalt, metals) {
-    return ships * SHIP_MASS + cargoSalt + metals;
+function effectiveMass(ships, cargoSalt, metals) {
+    return ships * (SHIP_MASS + 1) + metals + Math.ceil((cargoSalt ?? 0) / 3);
   }
 
   function requiredBurnSalt(ships, cargoSalt, metals, distance) {
@@ -1885,6 +1892,9 @@ export function createCommandState(options = {}) {
     if (fromQuery && testHarness.scenarioList.some((entry) => entry.id === fromQuery)) {
       return fromQuery;
     }
+    if (testHarness.scenarioList.some((entry) => entry.id === "starter_constellation")) {
+      return "starter_constellation";
+    }
     if (testHarness.scenarioList.some((entry) => entry.id === "profile_frontier_vs_turtle")) {
       return "profile_frontier_vs_turtle";
     }
@@ -1901,14 +1911,7 @@ export function createCommandState(options = {}) {
       return fromQuery;
     }
 
-    const snapshot = latestSnapshot.value;
-    return [...world.scenario.factions]
-      .sort((left, right) => {
-        const leftOwned = snapshot?.factions[left.id]?.ownedSystems ?? 0;
-        const rightOwned = snapshot?.factions[right.id]?.ownedSystems ?? 0;
-        return rightOwned - leftOwned;
-      })[0]
-      ?.id;
+    return world.scenario.factions[0]?.id ?? null;
   }
 
   async function loadScenario(id) {
@@ -2207,6 +2210,11 @@ export function createCommandState(options = {}) {
 
   function setActiveAction(actionKey) {
     ui.activeAction = actionKey;
+    ui.activeWorkspace = "map";
+  }
+
+  function setActiveWorkspace(workspaceKey) {
+    ui.activeWorkspace = workspaceKey;
   }
 
   function prepareProbeForSystem(targetSystemId = selectedSystem.value?.system.id) {
@@ -2215,6 +2223,7 @@ export function createCommandState(options = {}) {
     }
 
     const origin = nearestFriendlyOrigin(targetSystemId)?.systemId ?? currentSeat.value.faction.homeSystemId;
+    ui.activeWorkspace = "map";
     ui.activeAction = "deploy_probe";
     ui.orderDraft.anchorId = targetSystemId;
     ui.orderDraft.probeOriginId = origin;
@@ -2259,6 +2268,7 @@ export function createCommandState(options = {}) {
 
   return {
     ORDER_ACTIONS,
+    WORKSPACE_VIEWS,
     PRODUCTION_FOCUS_OPTIONS,
     PRODUCTION_POSTURE_OPTIONS,
     api,
@@ -2304,6 +2314,7 @@ export function createCommandState(options = {}) {
     selectSystem,
     setSelectedSystemId,
     setActiveAction,
+    setActiveWorkspace,
     prepareProbeForSystem,
     setProbeOriginSystemId,
     setProductionFocus,

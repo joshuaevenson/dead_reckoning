@@ -80,7 +80,7 @@
       "at": "2240-05-01",
       "path": "systems.home.saltStockpile",
       "op": "eq",
-      "value": 36
+      "value": 23
     },
     {
       "at": "2240-05-01",

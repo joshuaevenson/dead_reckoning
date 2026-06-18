@@ -1,0 +1,284 @@
+{
+  "name": "starter_constellation",
+  "seed": 19,
+  "startDate": "2240-05-05",
+  "durationDays": 7,
+  "factions": [
+    {
+      "id": "blue",
+      "name": "Aster Crown",
+      "homeSystemId": "sol"
+    },
+    {
+      "id": "green",
+      "name": "Verdant Bastion",
+      "homeSystemId": "tau_ceti"
+    }
+  ],
+  "systems": [
+    {
+      "id": "sol",
+      "name": "Sol",
+      "position": { "x": 0, "y": 0 },
+      "starType": "yellow_star",
+      "saltProfile": "major",
+      "metalRichness": "exceptional",
+      "starlaneLinks": ["barnards_star", "sirius"],
+      "ownerId": "blue",
+      "saltStockpile": 180,
+      "metalStockpile": 140,
+      "probeStockpile": 3,
+      "infrastructure": 10,
+      "defense": 8,
+      "controlAgeDays": 480,
+      "garrisonShips": {
+        "blue": 8
+      }
+    },
+    {
+      "id": "barnards_star",
+      "name": "Barnard's Star",
+      "position": { "x": 1.4, "y": 1.1 },
+      "starType": "red_dwarf",
+      "saltProfile": "none",
+      "metalRichness": "standard",
+      "starlaneLinks": ["sol", "wolf_359", "lalande_21185"],
+      "ownerId": "blue",
+      "saltStockpile": 18,
+      "metalStockpile": 10,
+      "probeStockpile": 1,
+      "infrastructure": 4,
+      "defense": 2,
+      "controlAgeDays": 60,
+      "garrisonShips": {
+        "blue": 3
+      }
+    },
+    {
+      "id": "wolf_359",
+      "name": "Wolf 359",
+      "position": { "x": 2.5, "y": 2.2 },
+      "starType": "red_dwarf",
+      "saltProfile": "none",
+      "metalRichness": "exceptional",
+      "starlaneLinks": ["barnards_star"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "probeStockpile": 0,
+      "infrastructure": 1,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "sirius",
+      "name": "Sirius",
+      "position": { "x": 2.2, "y": -0.8 },
+      "starType": "white_blue_star",
+      "saltProfile": "productive",
+      "metalRichness": "rich",
+      "starlaneLinks": ["sol", "procyon", "proxima_centauri"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "probeStockpile": 0,
+      "infrastructure": 2,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "lalande_21185",
+      "name": "Lalande 21185",
+      "position": { "x": 3.6, "y": 0.9 },
+      "starType": "yellow_star",
+      "saltProfile": "productive",
+      "metalRichness": "standard",
+      "starlaneLinks": ["barnards_star", "procyon", "altair"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "probeStockpile": 0,
+      "infrastructure": 2,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "procyon",
+      "name": "Procyon",
+      "position": { "x": 4.8, "y": 0.1 },
+      "starType": "white_blue_star",
+      "saltProfile": "none",
+      "metalRichness": "standard",
+      "starlaneLinks": ["sirius", "lalande_21185", "altair"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "probeStockpile": 0,
+      "infrastructure": 2,
+      "defense": 1,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "proxima_centauri",
+      "name": "Proxima Centauri",
+      "position": { "x": 4.1, "y": -1.7 },
+      "starType": "red_dwarf",
+      "saltProfile": "none",
+      "metalRichness": "rich",
+      "starlaneLinks": ["sirius", "altair"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "probeStockpile": 0,
+      "infrastructure": 1,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "altair",
+      "name": "Altair",
+      "position": { "x": 6.4, "y": 0.2 },
+      "starType": "yellow_star",
+      "saltProfile": "productive",
+      "metalRichness": "rich",
+      "starlaneLinks": ["lalande_21185", "procyon", "proxima_centauri", "epsilon_eridani", "groombridge_34"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "probeStockpile": 0,
+      "infrastructure": 3,
+      "defense": 2,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "epsilon_eridani",
+      "name": "Epsilon Eridani",
+      "position": { "x": 8.2, "y": 1.1 },
+      "starType": "yellow_star",
+      "saltProfile": "none",
+      "metalRichness": "standard",
+      "starlaneLinks": ["altair", "sixty_one_cygni", "tau_ceti"],
+      "ownerId": "green",
+      "saltStockpile": 16,
+      "metalStockpile": 12,
+      "probeStockpile": 1,
+      "infrastructure": 4,
+      "defense": 2,
+      "controlAgeDays": 60,
+      "garrisonShips": {
+        "green": 3
+      }
+    },
+    {
+      "id": "sixty_one_cygni",
+      "name": "61 Cygni",
+      "position": { "x": 9.7, "y": 2.2 },
+      "starType": "red_dwarf",
+      "saltProfile": "none",
+      "metalRichness": "rich",
+      "starlaneLinks": ["epsilon_eridani", "tau_ceti"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "probeStockpile": 0,
+      "infrastructure": 1,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "groombridge_34",
+      "name": "Groombridge 34",
+      "position": { "x": 10.0, "y": -0.8 },
+      "starType": "red_dwarf",
+      "saltProfile": "none",
+      "metalRichness": "standard",
+      "starlaneLinks": ["altair", "tau_ceti", "delta_pavonis"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "probeStockpile": 0,
+      "infrastructure": 1,
+      "defense": 0,
+      "controlAgeDays": 0
+    },
+    {
+      "id": "tau_ceti",
+      "name": "Tau Ceti",
+      "position": { "x": 11.3, "y": 0.1 },
+      "starType": "yellow_star",
+      "saltProfile": "major",
+      "metalRichness": "exceptional",
+      "starlaneLinks": ["epsilon_eridani", "sixty_one_cygni", "groombridge_34"],
+      "ownerId": "green",
+      "saltStockpile": 178,
+      "metalStockpile": 138,
+      "probeStockpile": 3,
+      "infrastructure": 10,
+      "defense": 8,
+      "controlAgeDays": 480,
+      "garrisonShips": {
+        "green": 8
+      }
+    },
+    {
+      "id": "delta_pavonis",
+      "name": "Delta Pavonis",
+      "position": { "x": 12.6, "y": -1.4 },
+      "starType": "yellow_star",
+      "saltProfile": "productive",
+      "metalRichness": "standard",
+      "starlaneLinks": ["groombridge_34"],
+      "ownerId": null,
+      "saltStockpile": 0,
+      "metalStockpile": 0,
+      "probeStockpile": 0,
+      "infrastructure": 2,
+      "defense": 0,
+      "controlAgeDays": 0
+    }
+  ],
+  "commands": [
+    {
+      "type": "launch_fleet",
+      "at": "2240-05-06",
+      "factionId": "blue",
+      "originSystemId": "barnards_star",
+      "destinationSystemId": "wolf_359",
+      "ships": 2,
+      "mission": "attack",
+      "name": "North Screen"
+    },
+    {
+      "type": "deploy_probe",
+      "at": "2240-05-07",
+      "factionId": "blue",
+      "originSystemId": "sol",
+      "anchorSystemId": "lalande_21185",
+      "reportDestinationSystemId": "sol"
+    },
+    {
+      "type": "launch_fleet",
+      "at": "2240-05-10",
+      "factionId": "green",
+      "originSystemId": "tau_ceti",
+      "destinationSystemId": "lalande_21185",
+      "ships": 4,
+      "mission": "blockade",
+      "name": "Forward Screen"
+    }
+  ],
+  "expectations": [
+    {
+      "at": "2240-05-11",
+      "path": "factions.blue.ownedSystems",
+      "op": "gte",
+      "value": 2
+    },
+    {
+      "at": "2240-05-11",
+      "path": "factions.green.ownedSystems",
+      "op": "gte",
+      "value": 2
+    }
+  ]
+}
