@@ -1,6 +1,11 @@
 import { computed, reactive, toRaw, watch } from "vue";
 
 const SHIP_MASS = 5;
+const PROBE_COST_SALT = 2;
+const DIRECT_TIME_MULTIPLIER = 1;
+const DIRECT_SALT_MULTIPLIER = 1;
+const STARLANE_TIME_MULTIPLIER = 0.7;
+const STARLANE_SALT_MULTIPLIER = 0.8;
 const STAR_OUTPUT = {
   red_dwarf: 2,
   yellow_star: 4,
@@ -27,6 +32,27 @@ const ORDER_ACTIONS = [
   { key: "deploy_probe", label: "Deploy Probe", icon: "pi pi-search" },
   { key: "trade", label: "Trade", icon: "pi pi-sync" },
 ];
+const PRODUCTION_FOCUS_OPTIONS = [
+  { label: "Build Ships", value: "ships" },
+  { label: "Build Defenses", value: "defenses" },
+  { label: "Build Probes", value: "probes" },
+  { label: "Bank Salt", value: "bank_salt" },
+  { label: "Bank Metals", value: "bank_metals" },
+];
+const PRODUCTION_POSTURE_OPTIONS = [
+  { label: "Balanced", value: "balanced" },
+  { label: "Frontier", value: "frontier" },
+  { label: "Siege Prep", value: "siege" },
+  { label: "Emergency", value: "emergency" },
+];
+
+function defaultProductionPlan() {
+  return {
+    focus: "ships",
+    quantity: 1,
+    posture: "balanced",
+  };
+}
 
 function formatNumber(value) {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(value ?? 0);
@@ -40,29 +66,10 @@ function titleCase(value) {
 
 function formatTravelSpan(days) {
   if (!Number.isFinite(days) || days <= 0) {
-    return "less than a day";
+    return "less than a year";
   }
 
-  if (days < 30) {
-    return `${days} ${days === 1 ? "day" : "days"}`;
-  }
-
-  const years = Math.floor(days / 360);
-  const months = Math.floor((days % 360) / 30);
-  const remainingDays = days % 30;
-  const parts = [];
-
-  if (years > 0) {
-    parts.push(`${years} ${years === 1 ? "year" : "years"}`);
-  }
-  if (months > 0) {
-    parts.push(`${months} ${months === 1 ? "month" : "months"}`);
-  }
-  if (parts.length === 0 || (parts.length < 2 && remainingDays > 0 && years === 0)) {
-    parts.push(`${remainingDays} ${remainingDays === 1 ? "day" : "days"}`);
-  }
-
-  return parts.slice(0, 2).join(" and ");
+  return `${days} ${days === 1 ? "year" : "years"}`;
 }
 
 function formatMissionNarrative(mission) {
@@ -88,6 +95,10 @@ function saltOutputForSystem(system) {
   }
 
   return STAR_OUTPUT[system?.starType] ?? 0;
+}
+
+function formatStarlaneId(a, b) {
+  return a < b ? `lane:${a}:${b}` : `lane:${b}:${a}`;
 }
 
 function parseLogEntry(line) {
@@ -123,6 +134,10 @@ function addDays(date, days) {
   }
 
   return new Date(base + days * 86400000).toISOString().slice(0, 10);
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function cloneScenario(scenario) {
@@ -220,6 +235,9 @@ export function useCommandState() {
 
 export function createCommandState(options = {}) {
   const fetchImpl = options.fetchImpl ?? globalThis.fetch?.bind(globalThis);
+  const storage =
+    options.storage
+    ?? (typeof window !== "undefined" && window.localStorage ? window.localStorage : null);
   const locationSearch =
     options.locationSearch
     ?? (typeof window !== "undefined" ? window.location.search : "");
@@ -250,10 +268,16 @@ export function createCommandState(options = {}) {
     selectedSystemId: null,
     activeAction: "attack",
     pendingProbeOrders: {},
+    plannerLoadedKey: null,
+    planner: {
+      speculation: "",
+      productionBySystemId: {},
+    },
     orderDraft: {
       destinationId: null,
       ships: 3,
       anchorId: null,
+      probeOriginId: null,
       tradeFocus: "salt",
       resupplyFocus: "salt",
     },
@@ -340,17 +364,116 @@ export function createCommandState(options = {}) {
     }
 
     if (originSystemId === destinationSystemId) {
-      return { systemId: destinationSystemId, distance: 0, travelDays: 0 };
+      return {
+        systemId: destinationSystemId,
+        distance: 0,
+        totalDistance: 0,
+        travelDays: 0,
+        usesStarlane: false,
+        segmentIds: [],
+        pathSystemIds: [originSystemId],
+      };
     }
 
-    const deltaX = destination.position.x - origin.position.x;
-    const deltaY = destination.position.y - origin.position.y;
-    const distance = Math.hypot(deltaX, deltaY);
-    return {
-      systemId: destinationSystemId,
-      distance,
-      travelDays: Math.max(1, Math.ceil(distance)),
-    };
+    const systems = systemsMap.value;
+    const seen = new Map();
+    const queue = [{
+      systemId: originSystemId,
+      timeCost: 0,
+      saltCostDistance: 0,
+      pathSystemIds: [originSystemId],
+      segmentIds: [],
+      usesStarlane: false,
+    }];
+
+    const compare = (left, right) =>
+      left.timeCost - right.timeCost
+      || left.saltCostDistance - right.saltCostDistance
+      || left.segmentIds.length - right.segmentIds.length
+      || left.systemId.localeCompare(right.systemId);
+
+    const extendPath = (node, nextSystemId, distance, timeMultiplier, saltMultiplier, segmentId, usesStarlane) => ({
+      systemId: nextSystemId,
+      timeCost: node.timeCost + distance * timeMultiplier,
+      saltCostDistance: node.saltCostDistance + distance * saltMultiplier,
+      pathSystemIds: [...node.pathSystemIds, nextSystemId],
+      segmentIds: [...node.segmentIds, segmentId],
+      usesStarlane: node.usesStarlane || usesStarlane,
+    });
+
+    while (queue.length > 0) {
+      queue.sort(compare);
+      const current = queue.shift();
+      const known = seen.get(current.systemId);
+      if (known && compare(known, current) <= 0) {
+        continue;
+      }
+      seen.set(current.systemId, current);
+
+      if (current.systemId === destinationSystemId) {
+        const totalDistance = current.pathSystemIds.reduce((total, systemId, index, ids) => {
+          if (index === 0) {
+            return total;
+          }
+          const previous = systems.get(ids[index - 1]);
+          const next = systems.get(systemId);
+          return total + Math.hypot(next.position.x - previous.position.x, next.position.y - previous.position.y);
+        }, 0);
+        return {
+          systemId: destinationSystemId,
+          distance: current.saltCostDistance,
+          totalDistance,
+          travelDays: Math.max(1, Math.ceil(current.timeCost)),
+          usesStarlane: current.usesStarlane,
+          segmentIds: current.segmentIds,
+          pathSystemIds: current.pathSystemIds,
+        };
+      }
+
+      const currentSystem = systems.get(current.systemId);
+      const directDistance = Math.hypot(
+        destination.position.x - currentSystem.position.x,
+        destination.position.y - currentSystem.position.y,
+      );
+      queue.push(
+        extendPath(
+          current,
+          destinationSystemId,
+          directDistance,
+          DIRECT_TIME_MULTIPLIER,
+          DIRECT_SALT_MULTIPLIER,
+          `direct:${current.systemId}:${destinationSystemId}`,
+          false,
+        ),
+      );
+
+      for (const neighborId of currentSystem.starlaneLinks ?? []) {
+        if (current.pathSystemIds.includes(neighborId)) {
+          continue;
+        }
+        const neighbor = systems.get(neighborId);
+        if (!neighbor) {
+          continue;
+        }
+        const laneDistance = Math.hypot(
+          neighbor.position.x - currentSystem.position.x,
+          neighbor.position.y - currentSystem.position.y,
+        );
+        queue.push(
+          extendPath(
+            current,
+            neighborId,
+            laneDistance,
+            STARLANE_TIME_MULTIPLIER,
+            STARLANE_SALT_MULTIPLIER,
+            formatStarlaneId(current.systemId, neighborId),
+            true,
+          ),
+        );
+      }
+    }
+
+    return null;
   }
 
   function effectiveMass(ships, cargoSalt, metals) {
@@ -374,6 +497,30 @@ export function createCommandState(options = {}) {
 
     return { faction, snapshot };
   });
+
+  const currentSeatHomeSystem = computed(() => {
+    if (!currentSeat.value) {
+      return null;
+    }
+
+    return systemsMap.value.get(currentSeat.value.faction.homeSystemId) ?? null;
+  });
+
+  const plannerStorageKey = computed(() => {
+    if (!world.scenario || !ui.seatFactionId) {
+      return null;
+    }
+
+    return `dead-reckoning:planner:${world.scenario.name}:${ui.seatFactionId}`;
+  });
+
+  function homeFactionForSystem(systemId) {
+    if (!world.scenario) {
+      return null;
+    }
+
+    return world.scenario.factions.find((faction) => faction.homeSystemId === systemId) ?? null;
+  }
 
   const selectedSystem = computed(() => {
     if (!ui.selectedSystemId) {
@@ -407,6 +554,24 @@ export function createCommandState(options = {}) {
     );
   });
 
+  const productionPlannerRows = computed(() =>
+    ownedSystems.value.map((system) => {
+      const snapshot = snapshotSystem(system.id);
+      const storedPlan = ui.planner.productionBySystemId[system.id] ?? defaultProductionPlan();
+      return {
+        systemId: system.id,
+        systemName: system.name,
+        focus: storedPlan.focus ?? "ships",
+        quantity: storedPlan.quantity ?? 1,
+        posture: storedPlan.posture ?? "balanced",
+        outputText: `${saltOutputForSystem(system)} salt + ${METAL_OUTPUT[system.metalRichness]} metal / year`,
+        storesText: snapshot
+          ? `${formatNumber(snapshot.saltStockpile)} salt · ${formatNumber(snapshot.metalStockpile)} metal · ${formatNumber(snapshot.probeStockpile ?? 0)} probes`
+          : "No current stores",
+      };
+    }),
+  );
+
   const destinationOptions = computed(() => {
     if (!selectedSystem.value || !world.scenario) {
       return [];
@@ -436,6 +601,52 @@ export function createCommandState(options = {}) {
       }));
   });
 
+  function probeOriginCandidates(targetSystemId) {
+    if (!targetSystemId) {
+      return [];
+    }
+
+    return ownedSystems.value
+      .map((system) => {
+        const plan = routePlan(system.id, targetSystemId);
+        const snapshot = snapshotSystem(system.id);
+        if (!plan || !snapshot) {
+          return null;
+        }
+
+        const canAfford =
+          snapshot.saltStockpile >= PROBE_COST_SALT
+          && (snapshot.probeStockpile ?? 0) >= 1;
+
+        return {
+          systemId: system.id,
+          plan,
+          snapshot,
+          canAfford,
+        };
+      })
+      .filter(Boolean)
+      .sort((left, right) =>
+        left.plan.travelDays - right.plan.travelDays
+        || left.plan.distance - right.plan.distance
+        || left.systemId.localeCompare(right.systemId),
+      );
+  }
+
+  const probeOriginOptions = computed(() => {
+    const anchorId = ui.orderDraft.anchorId ?? selectedSystem.value?.system.id ?? null;
+    if (!anchorId) {
+      return [];
+    }
+
+    return probeOriginCandidates(anchorId).map((candidate) => ({
+      label: `${translateSystemId(candidate.systemId)} · ${formatTravelSpan(candidate.plan.travelDays)} · ${formatNumber(candidate.snapshot.saltStockpile)} salt / ${formatNumber(candidate.snapshot.probeStockpile ?? 0)} probes`,
+      value: candidate.systemId,
+      canAfford: candidate.canAfford,
+      travelDays: candidate.plan.travelDays,
+    }));
+  });
+
   const summaryCards = computed(() => {
     if (!currentSeat.value || !world.scenario) {
       return [];
@@ -459,6 +670,26 @@ export function createCommandState(options = {}) {
       { label: "Transit", value: formatNumber(transitCount) },
       { label: "Contested", value: formatNumber(contested) },
     ];
+  });
+
+  const blockadeSystems = computed(() => {
+    const bySystemId = new Map();
+
+    for (const fleet of fleetEntries.value) {
+      if (fleet.status !== "stationed" || fleet.mission !== "blockade" || !fleet.currentSystemId || fleet.ships <= 0) {
+        continue;
+      }
+      const entry = bySystemId.get(fleet.currentSystemId) ?? {
+        systemId: fleet.currentSystemId,
+        owners: new Set(),
+        totalShips: 0,
+      };
+      entry.owners.add(fleet.factionId);
+      entry.totalShips += fleet.ships;
+      bySystemId.set(fleet.currentSystemId, entry);
+    }
+
+    return bySystemId;
   });
 
   const mapLayout = computed(() => {
@@ -504,6 +735,240 @@ export function createCommandState(options = {}) {
     };
   });
 
+  const starlaneSegments = computed(() => {
+    if (!world.scenario) {
+      return [];
+    }
+
+    const lanes = [];
+    const seen = new Set();
+
+    for (const system of world.scenario.systems) {
+      for (const neighborId of system.starlaneLinks ?? []) {
+        const laneId = formatStarlaneId(system.id, neighborId);
+        if (seen.has(laneId)) {
+          continue;
+        }
+        seen.add(laneId);
+
+        const neighbor = systemsMap.value.get(neighborId);
+        const fromPoint = mapLayout.value.get(system.id);
+        const toPoint = mapLayout.value.get(neighborId);
+        if (!neighbor || !fromPoint || !toPoint) {
+          continue;
+        }
+
+        const blockadeOwners = new Set();
+        if (blockadeSystems.value.has(system.id)) {
+          for (const ownerId of blockadeSystems.value.get(system.id).owners) {
+            blockadeOwners.add(ownerId);
+          }
+        }
+        if (blockadeSystems.value.has(neighborId)) {
+          for (const ownerId of blockadeSystems.value.get(neighborId).owners) {
+            blockadeOwners.add(ownerId);
+          }
+        }
+
+        let blockadeTone = "none";
+        if (blockadeOwners.size > 0) {
+          const ownerIds = [...blockadeOwners];
+          if (currentSeat.value && ownerIds.every((ownerId) => ownerId === currentSeat.value.faction.id)) {
+            blockadeTone = "friendly";
+          } else if (currentSeat.value && ownerIds.some((ownerId) => ownerId === currentSeat.value.faction.id)) {
+            blockadeTone = "contested";
+          } else {
+            blockadeTone = "hostile";
+          }
+        }
+
+        lanes.push({
+          laneId,
+          fromSystemId: system.id,
+          toSystemId: neighborId,
+          x1: fromPoint.x,
+          y1: fromPoint.y,
+          x2: toPoint.x,
+          y2: toPoint.y,
+          midpointX: (fromPoint.x + toPoint.x) / 2,
+          midpointY: (fromPoint.y + toPoint.y) / 2,
+          blockadeTone,
+          blockadeOwners: [...blockadeOwners],
+        });
+      }
+    }
+
+    return lanes;
+  });
+
+  function resolveTransitMarker(originSystemId, destinationSystemId, departureDate, arrivalDate, pathSystemIds) {
+    if (!currentWorldDate.value || !originSystemId || !destinationSystemId || !departureDate || !arrivalDate) {
+      return null;
+    }
+
+    const resolvedPathSystemIds = pathSystemIds?.length
+      ? pathSystemIds
+      : [originSystemId, destinationSystemId];
+    const points = resolvedPathSystemIds
+      .map((systemId) => mapLayout.value.get(systemId))
+      .filter(Boolean);
+    if (points.length < 2) {
+      return null;
+    }
+
+    const totalDays = Math.max(1, diffDays(departureDate, arrivalDate) ?? 1);
+    const elapsedDays = clamp(diffDays(departureDate, currentWorldDate.value) ?? 0, 0, totalDays);
+    const progress = clamp(elapsedDays / totalDays, 0.04, 0.96);
+
+    const segments = [];
+    let totalDistance = 0;
+    for (let index = 1; index < points.length; index += 1) {
+      const from = points[index - 1];
+      const to = points[index];
+      const distance = Math.hypot(to.x - from.x, to.y - from.y);
+      segments.push({ from, to, distance });
+      totalDistance += distance;
+    }
+    if (totalDistance <= 0) {
+      return null;
+    }
+
+    let targetDistance = totalDistance * progress;
+    let activeSegment = segments[segments.length - 1];
+    for (const segment of segments) {
+      if (targetDistance <= segment.distance) {
+        activeSegment = segment;
+        break;
+      }
+      targetDistance -= segment.distance;
+    }
+
+    const segmentProgress = activeSegment.distance > 0 ? targetDistance / activeSegment.distance : 0;
+    return {
+      x: activeSegment.from.x + (activeSegment.to.x - activeSegment.from.x) * segmentProgress,
+      y: activeSegment.from.y + (activeSegment.to.y - activeSegment.from.y) * segmentProgress,
+      angle:
+        Math.atan2(
+          activeSegment.to.y - activeSegment.from.y,
+          activeSegment.to.x - activeSegment.from.x,
+        ) * (180 / Math.PI),
+      etaDays: diffDays(currentWorldDate.value, arrivalDate) ?? 0,
+    };
+  }
+
+  const fleetMarkers = computed(() => {
+    if (!currentWorldDate.value) {
+      return [];
+    }
+
+    const markers = [];
+    for (const fleet of fleetEntries.value) {
+      if (
+        fleet.status !== "transit"
+        || !fleet.originSystemId
+        || !fleet.destinationSystemId
+        || !fleet.departureDate
+        || !fleet.arrivalDate
+      ) {
+        continue;
+      }
+
+      const marker = resolveTransitMarker(
+        fleet.originSystemId,
+        fleet.destinationSystemId,
+        fleet.departureDate,
+        fleet.arrivalDate,
+        fleet.travelPathSystemIds,
+      );
+      if (!marker) {
+        continue;
+      }
+      const factionName = translateFactionId(fleet.factionId);
+      const destinationName = translateSystemId(fleet.destinationSystemId);
+
+      let tone = "neutral";
+      if (currentSeat.value) {
+        tone = fleet.factionId === currentSeat.value.faction.id ? "friendly" : "hostile";
+      }
+
+      markers.push({
+        fleetId: fleet.fleetId,
+        x: marker.x,
+        y: marker.y,
+        angle: marker.angle,
+        ships: fleet.ships,
+        tone,
+        mission: fleet.mission,
+        label: `${fleet.ships}`,
+        detail: `${factionName} ${formatMissionNarrative(fleet.mission)} toward ${destinationName}, ETA ${formatTravelSpan(marker.etaDays)}.`,
+      });
+    }
+
+    return markers;
+  });
+
+  const probeMarkers = computed(() => {
+    if (!currentWorldDate.value || !currentSeat.value) {
+      return [];
+    }
+
+    const markers = [];
+    for (const probe of probeEntries.value) {
+      if (probe.factionId !== currentSeat.value.faction.id) {
+        continue;
+      }
+
+      if (probe.status === "deployed") {
+        const anchorPoint = mapLayout.value.get(probe.anchorSystemId);
+        if (!anchorPoint) {
+          continue;
+        }
+
+        markers.push({
+          probeId: probe.probeId,
+          status: "on_station",
+          x: anchorPoint.x + 18,
+          y: anchorPoint.y - 18,
+          angle: 0,
+          label: "P",
+          detail: `Probe on station at ${translateSystemId(probe.anchorSystemId)}. Exact local conditions available.`,
+        });
+        continue;
+      }
+
+      if (
+        probe.status !== "transit"
+        || !probe.originSystemId
+        || !probe.arrivalDate
+      ) {
+        continue;
+      }
+
+      const marker = resolveTransitMarker(
+        probe.originSystemId,
+        probe.anchorSystemId,
+        probe.departureDate,
+        probe.arrivalDate,
+        [probe.originSystemId, probe.anchorSystemId],
+      );
+      if (!marker) {
+        continue;
+      }
+
+      markers.push({
+        probeId: probe.probeId,
+        status: "in_transit",
+        x: marker.x,
+        y: marker.y,
+        angle: marker.angle,
+        label: "P",
+        detail: `Probe from ${translateSystemId(probe.originSystemId)} toward ${translateSystemId(probe.anchorSystemId)}, ETA ${formatTravelSpan(marker.etaDays)}.`,
+      });
+    }
+
+    return markers;
+  });
+
   function systemTone(systemId) {
     const snapshot = snapshotSystem(systemId);
     if (!snapshot || !currentSeat.value) {
@@ -518,6 +983,25 @@ export function createCommandState(options = {}) {
     return "hostile";
   }
 
+  function homeBadgeForSystem(systemId) {
+    const homeFaction = homeFactionForSystem(systemId);
+    if (!homeFaction) {
+      return null;
+    }
+
+    if (currentSeat.value && homeFaction.id === currentSeat.value.faction.id) {
+      return {
+        label: "HOME",
+        tone: "friendly",
+      };
+    }
+
+    return {
+      label: "HQ",
+      tone: "hostile",
+    };
+  }
+
   function starClass(starType) {
     switch (starType) {
       case "red_dwarf":
@@ -529,6 +1013,29 @@ export function createCommandState(options = {}) {
       default:
         return "star-yellow";
     }
+  }
+
+  function blockadeStatus(systemId) {
+    const blockading = blockadeSystems.value.get(systemId);
+    if (!blockading || blockading.owners.size === 0) {
+      return {
+        status: "none",
+        label: "No blockade",
+        detail: "No fleet is currently screening the nearby starlanes from this system.",
+      };
+    }
+
+    const ownerIds = [...blockading.owners];
+    const ownerNames = ownerIds.map((ownerId) => translateFactionId(ownerId)).join(", ");
+    const isFriendly = currentSeat.value && ownerIds.every((ownerId) => ownerId === currentSeat.value.faction.id);
+    const isMixed = currentSeat.value && ownerIds.some((ownerId) => ownerId === currentSeat.value.faction.id) && !isFriendly;
+
+    return {
+      status: isFriendly ? "friendly" : isMixed ? "contested" : "hostile",
+      label: isFriendly ? "Friendly blockade" : isMixed ? "Contested blockade" : "Foreign blockade",
+      detail: `${ownerNames} ${ownerIds.length === 1 ? "is" : "are"} screening the connected starlanes from this system.`,
+      totalShips: blockading.totalShips,
+    };
   }
 
   function probeStatusForSystem(systemId) {
@@ -614,13 +1121,86 @@ export function createCommandState(options = {}) {
     return probeStatusForSystem(selectedSystem.value.system.id);
   });
 
+  const reconSummary = computed(() => {
+    if (!currentSeat.value) {
+      return {
+        total: 0,
+        onStation: 0,
+        inTransit: 0,
+        items: [],
+      };
+    }
+
+    const items = [];
+
+    for (const probe of probeEntries.value) {
+      if (probe.factionId !== currentSeat.value.faction.id) {
+        continue;
+      }
+
+      const onStation = probe.status === "deployed";
+      const etaDays = probe.arrivalDate ? diffDays(currentWorldDate.value, probe.arrivalDate) : null;
+      items.push({
+        probeId: probe.probeId,
+        systemId: probe.anchorSystemId,
+        label: translateSystemId(probe.anchorSystemId),
+        status: onStation ? "on_station" : "in_transit",
+        statusLabel: onStation
+          ? "On station"
+          : etaDays !== null
+            ? `Arrives in ${formatTravelSpan(etaDays)}`
+            : "En route",
+        detail: onStation
+          ? "Exact local conditions available."
+          : `Probe launched from ${translateSystemId(probe.originSystemId)} toward ${translateSystemId(probe.anchorSystemId)}.`,
+      });
+    }
+
+    for (const pendingProbe of Object.values(ui.pendingProbeOrders)) {
+      if (pendingProbe.factionId !== currentSeat.value.faction.id) {
+        continue;
+      }
+      if (items.some((item) => item.systemId === pendingProbe.anchorSystemId)) {
+        continue;
+      }
+      const etaDays = diffDays(currentWorldDate.value, pendingProbe.arrivalDate);
+      items.push({
+        probeId: `pending:${pendingProbe.anchorSystemId}`,
+        systemId: pendingProbe.anchorSystemId,
+        label: translateSystemId(pendingProbe.anchorSystemId),
+        status: "in_transit",
+        statusLabel: etaDays !== null
+          ? `Arrives in ${formatTravelSpan(etaDays)}`
+          : "En route",
+        detail: `Probe launched from ${translateSystemId(pendingProbe.originSystemId)} toward ${translateSystemId(pendingProbe.anchorSystemId)}.`,
+      });
+    }
+
+    items.sort((left, right) => {
+      if (left.status !== right.status) {
+        return left.status === "in_transit" ? -1 : 1;
+      }
+      return left.label.localeCompare(right.label);
+    });
+
+    return {
+      total: items.length,
+      onStation: items.filter((item) => item.status === "on_station").length,
+      inTransit: items.filter((item) => item.status === "in_transit").length,
+      items,
+    };
+  });
+
   const selectedSystemOverview = computed(() => {
     if (!selectedSystem.value || !currentSeat.value) {
       return null;
     }
 
     const { system, snapshot } = selectedSystem.value;
+    const homeFaction = homeFactionForSystem(system.id);
     const probeStatus = probeStatusForSystem(system.id);
+    const blockade = blockadeStatus(system.id);
+    const starlaneCount = (system.starlaneLinks ?? []).length;
     const canSeeLocalIntel =
       probeStatus.status === "friendly_control" || probeStatus.status === "on_station";
     const friendlyShips = totalShipsAtSystem(system.id, currentSeat.value.faction.id);
@@ -628,22 +1208,41 @@ export function createCommandState(options = {}) {
       .filter((fleet) => fleet.factionId !== currentSeat.value.faction.id)
       .reduce((total, fleet) => total + fleet.ships, 0);
 
+    const isSeatHome = system.id === currentSeat.value.faction.homeSystemId;
+    const homeLabel = isSeatHome
+      ? "Your home system"
+      : homeFaction
+        ? `${homeFaction.name} home system`
+        : null;
+
     return {
       title: system.name,
       canSeeLocalIntel,
+      homeLabel,
       owner:
-        snapshot.ownerId === currentSeat.value.faction.id
+        isSeatHome
+          ? "Friendly Control"
+          : snapshot.ownerId === currentSeat.value.faction.id
           ? "Friendly Control"
           : snapshot.ownerId
             ? `Held by ${world.scenario.factions.find((faction) => faction.id === snapshot.ownerId)?.name ?? snapshot.ownerId}`
             : "Open System",
       starText: `${titleCase(system.starType)} star`,
       metalText: `${titleCase(system.metalRichness)} metals`,
+      laneText:
+        starlaneCount > 0
+          ? `${starlaneCount} ${starlaneCount === 1 ? "starlane" : "starlanes"} connected`
+          : "No starlane junction",
+      blockadeText: blockade.status === "none" ? null : blockade.label,
       probeStatus,
       facts: [
         {
           label: "Yield",
-          value: `${saltOutputForSystem(system)} salt + ${METAL_OUTPUT[system.metalRichness]} metal / day`,
+          value: `${saltOutputForSystem(system)} salt + ${METAL_OUTPUT[system.metalRichness]} metal / year`,
+        },
+        {
+          label: "Seat",
+          value: homeLabel ?? "Field system",
         },
         {
           label: "Defense",
@@ -658,7 +1257,7 @@ export function createCommandState(options = {}) {
         {
           label: "Stores",
           value: canSeeLocalIntel
-            ? `${formatNumber(snapshot.saltStockpile)} salt + ${formatNumber(snapshot.metalStockpile)} metal`
+            ? `${formatNumber(snapshot.saltStockpile)} salt + ${formatNumber(snapshot.metalStockpile)} metal + ${formatNumber(snapshot.probeStockpile ?? 0)} probes`
             : "Probe required",
         },
       ],
@@ -682,7 +1281,7 @@ export function createCommandState(options = {}) {
     return {
       title: "Courier order",
       detail: relayPlan
-        ? `1 pigeon from ${translateSystemId(homeSystemId)} to ${selectedSystem.value.system.name} (${relayPlan.travelDays} days, 1 salt).`
+        ? `1 pigeon from ${translateSystemId(homeSystemId)} to ${selectedSystem.value.system.name} (${formatTravelSpan(relayPlan.travelDays)}, 1 salt).`
         : `1 pigeon from ${translateSystemId(homeSystemId)} to ${selectedSystem.value.system.name} (route unresolved).`,
     };
   });
@@ -1015,7 +1614,7 @@ export function createCommandState(options = {}) {
         lines: [
           `${ships} ships toward ${destinationName}`,
           intentLine,
-          `Transit estimate: ${plan ? `${plan.travelDays} days` : "No route"}`,
+          `Transit estimate: ${plan ? formatTravelSpan(plan.travelDays) : "No route"}`,
           `Projected burn cost: ${burn !== null ? `${burn} salt` : "Route required"}`,
           burn !== null
             ? `Post-launch local salt: ${Math.max(0, snapshot.saltStockpile - burn)}`
@@ -1036,7 +1635,7 @@ export function createCommandState(options = {}) {
         lines: [
           `${ships} ships escort supplies toward ${destinationName}`,
           `Cargo priority: ${titleCase(ui.orderDraft.resupplyFocus)}`,
-          `Transit estimate: ${plan ? `${plan.travelDays} days` : "No route"}`,
+          `Transit estimate: ${plan ? formatTravelSpan(plan.travelDays) : "No route"}`,
           `Escort burn cost: ${burn !== null ? `${burn} salt` : "Route required"}`,
           "Supply mass will expand in a later draft; this preview prices the escort first.",
           relayLine,
@@ -1046,14 +1645,17 @@ export function createCommandState(options = {}) {
 
     if (ui.activeAction === "deploy_probe") {
       const anchorId = ui.orderDraft.anchorId ?? system.id;
-      const anchorPlan = routePlan(system.id, anchorId);
+      const originSystemId = ui.orderDraft.probeOriginId ?? system.id;
+      const anchorPlan = routePlan(originSystemId, anchorId);
       const probeStatus = probeStatusForSystem(anchorId);
       return {
         title: "Probe Mission",
         lines: [
+          `Origin: ${translateSystemId(originSystemId)}`,
           `Anchor: ${translateSystemId(anchorId)}`,
-          `Travel time: ${anchorPlan?.travelDays ?? 0} days`,
-          "Cost: 2 salt and 2 metals",
+          `Estimated arrival: ${formatTravelSpan(anchorPlan?.travelDays ?? 0)}`,
+          `Cost: ${PROBE_COST_SALT} salt`,
+          "Requires: 1 ready probe in origin stores",
           probeStatus.status === "in_transit"
             ? probeStatus.label
             : "Probes narrow uncertainty around approach lanes and turns.",
@@ -1067,8 +1669,8 @@ export function createCommandState(options = {}) {
       lines: [
         `${system.name} to ${destinationName}`,
         `Cargo priority: ${titleCase(ui.orderDraft.tradeFocus)}`,
-        `Transit estimate: ${plan ? `${plan.travelDays} days` : "No route"}`,
-        `Local production: ${saltOutputForSystem(system)} salt / ${METAL_OUTPUT[system.metalRichness]} metals per day`,
+        `Transit estimate: ${plan ? formatTravelSpan(plan.travelDays) : "No route"}`,
+        `Local production: ${saltOutputForSystem(system)} salt / ${METAL_OUTPUT[system.metalRichness]} metals per year`,
         relayLine,
       ].filter(Boolean),
     };
@@ -1109,6 +1711,36 @@ export function createCommandState(options = {}) {
         };
       }
 
+      const originSystemId = ui.orderDraft.probeOriginId ?? selectedSystem.value.system.id;
+      const originSnapshot = snapshotSystem(originSystemId);
+      if (!originSnapshot) {
+        return {
+          label: "No origin",
+          disabled: true,
+          reason: "Choose a friendly system to launch the probe from.",
+        };
+      }
+
+      if (
+        originSnapshot.saltStockpile < PROBE_COST_SALT
+        || (originSnapshot.probeStockpile ?? 0) < 1
+      ) {
+        return {
+          label: "Insufficient stores",
+          disabled: true,
+          reason: `${translateSystemId(originSystemId)} needs ${PROBE_COST_SALT} salt and 1 ready probe to launch reconnaissance.`,
+        };
+      }
+
+      const originPlan = routePlan(originSystemId, anchorId);
+      if (!originPlan) {
+        return {
+          label: "No travel plan",
+          disabled: true,
+          reason: `No travel plan from ${translateSystemId(originSystemId)} to ${translateSystemId(anchorId)}.`,
+        };
+      }
+
       const probeStatus = probeStatusForSystem(anchorId);
       if (probeStatus.status === "in_transit" || probeStatus.status === "on_station") {
         return {
@@ -1121,7 +1753,7 @@ export function createCommandState(options = {}) {
       return {
         label: "Dispatch Probe",
         disabled: false,
-        reason: "Spend salt and metals to establish exact local intelligence.",
+        reason: `Spend ${PROBE_COST_SALT} salt from ${translateSystemId(originSystemId)} and commit 1 ready probe to establish exact local intelligence.`,
       };
     }
 
@@ -1165,11 +1797,88 @@ export function createCommandState(options = {}) {
     }
   });
 
+  watch(
+    plannerStorageKey,
+    (key) => {
+      if (!key) {
+        ui.plannerLoadedKey = null;
+        ui.planner.speculation = "";
+        ui.planner.productionBySystemId = {};
+        return;
+      }
+
+      let nextState = null;
+      if (storage) {
+        try {
+          const raw = storage.getItem(key);
+          nextState = raw ? JSON.parse(raw) : null;
+        } catch {
+          nextState = null;
+        }
+      }
+
+      ui.plannerLoadedKey = key;
+      ui.planner.speculation = typeof nextState?.speculation === "string" ? nextState.speculation : "";
+      ui.planner.productionBySystemId =
+        nextState?.productionBySystemId && typeof nextState.productionBySystemId === "object"
+          ? nextState.productionBySystemId
+          : {};
+    },
+    { immediate: true },
+  );
+
+  watch(
+    () => plannerStorageKey.value ? JSON.stringify({
+      speculation: ui.planner.speculation,
+      productionBySystemId: ui.planner.productionBySystemId,
+    }) : null,
+    (serialized) => {
+      const key = plannerStorageKey.value;
+      if (!key || !storage || ui.plannerLoadedKey !== key || serialized === null) {
+        return;
+      }
+
+      try {
+        storage.setItem(key, serialized);
+      } catch {
+        // Ignore storage quota or availability errors; the planner still works in-memory.
+      }
+    },
+  );
+
   watch(anchorOptions, (options) => {
     if (options.length > 0 && !options.some((option) => option.value === ui.orderDraft.anchorId)) {
       ui.orderDraft.anchorId = options[0].value;
     }
   });
+
+  watch(probeOriginOptions, (options) => {
+    if (options.length === 0) {
+      ui.orderDraft.probeOriginId = null;
+      return;
+    }
+
+    if (options.some((option) => option.value === ui.orderDraft.probeOriginId)) {
+      return;
+    }
+
+    const preferred = options.find((option) => option.canAfford) ?? options[0];
+    ui.orderDraft.probeOriginId = preferred.value;
+  });
+
+  watch(
+    () => ui.selectedSystemId,
+    (systemId) => {
+      if (ui.activeAction !== "deploy_probe" || !systemId || !currentSeat.value) {
+        return;
+      }
+
+      const snapshot = snapshotSystem(systemId);
+      if (snapshot?.ownerId === currentSeat.value.faction.id) {
+        ui.orderDraft.probeOriginId = systemId;
+      }
+    },
+  );
 
   function chooseDefaultScenarioId() {
     const fromQuery = new URLSearchParams(locationSearch).get("scenario");
@@ -1318,6 +2027,27 @@ export function createCommandState(options = {}) {
       throw new Error("Probe orders require both an origin and an anchor.");
     }
 
+    const originSnapshot = snapshotSystem(originSystemId);
+    if (!originSnapshot) {
+      throw new Error(`Unknown origin system ${originSystemId}.`);
+    }
+    if (originSnapshot.ownerId !== currentSeat.value.faction.id) {
+      throw new Error(`${translateSystemId(originSystemId)} is not under friendly control.`);
+    }
+    if (
+      originSnapshot.saltStockpile < PROBE_COST_SALT
+      || (originSnapshot.probeStockpile ?? 0) < 1
+    ) {
+      throw new Error(
+        `${translateSystemId(originSystemId)} needs ${PROBE_COST_SALT} salt and 1 ready probe to launch a probe.`,
+      );
+    }
+    if (!routePlan(originSystemId, anchorSystemId)) {
+      throw new Error(
+        `No travel plan from ${translateSystemId(originSystemId)} to ${translateSystemId(anchorSystemId)}.`,
+      );
+    }
+
     return {
       type: "deploy_probe",
       at,
@@ -1329,15 +2059,8 @@ export function createCommandState(options = {}) {
   }
 
   function nearestFriendlyOrigin(targetSystemId) {
-    const candidates = ownedSystems.value
-      .map((system) => ({
-        systemId: system.id,
-        plan: routePlan(system.id, targetSystemId),
-      }))
-      .filter((candidate) => candidate.plan !== null)
-      .sort((left, right) => left.plan.travelDays - right.plan.travelDays);
-
-    return candidates[0] ?? null;
+    const candidates = probeOriginCandidates(targetSystemId);
+    return candidates.find((candidate) => candidate.canAfford) ?? candidates[0] ?? null;
   }
 
   function recordPendingProbeOrder(originSystemId, anchorSystemId) {
@@ -1404,6 +2127,13 @@ export function createCommandState(options = {}) {
       return;
     }
 
+    if (!origin.canAfford) {
+      api.tone = "error";
+      api.status = "Probe unavailable";
+      api.error = `No friendly system with ${PROBE_COST_SALT} salt and a ready probe can currently launch reconnaissance to ${translateSystemId(targetSystemId)}.`;
+      return;
+    }
+
     const command = buildProbeCommand({
       originSystemId: origin.systemId,
       anchorSystemId: targetSystemId,
@@ -1433,8 +2163,9 @@ export function createCommandState(options = {}) {
         return;
       }
 
+      const originSystemId = ui.orderDraft.probeOriginId ?? selectedSystem.value.system.id;
       const command = buildProbeCommand({
-        originSystemId: selectedSystem.value.system.id,
+        originSystemId,
         anchorSystemId,
       });
       await submitScenarioCommand(
@@ -1442,7 +2173,7 @@ export function createCommandState(options = {}) {
         `Probe en route to ${translateSystemId(anchorSystemId)}`,
         anchorSystemId,
         () => {
-          recordPendingProbeOrder(selectedSystem.value.system.id, anchorSystemId);
+          recordPendingProbeOrder(originSystemId, anchorSystemId);
         },
       );
       return;
@@ -1486,16 +2217,56 @@ export function createCommandState(options = {}) {
     const origin = nearestFriendlyOrigin(targetSystemId)?.systemId ?? currentSeat.value.faction.homeSystemId;
     ui.activeAction = "deploy_probe";
     ui.orderDraft.anchorId = targetSystemId;
+    ui.orderDraft.probeOriginId = origin;
     selectSystem(origin);
+  }
+
+  function setProbeOriginSystemId(systemId) {
+    ui.orderDraft.probeOriginId = systemId;
+    if (systemId) {
+      selectSystem(systemId);
+    }
+  }
+
+  function updateProductionPlan(systemId, patch) {
+    const current = ui.planner.productionBySystemId[systemId] ?? defaultProductionPlan();
+    ui.planner.productionBySystemId = {
+      ...ui.planner.productionBySystemId,
+      [systemId]: {
+        ...current,
+        ...patch,
+      },
+    };
+  }
+
+  function setProductionFocus(systemId, focus) {
+    updateProductionPlan(systemId, { focus });
+  }
+
+  function setProductionQuantity(systemId, quantity) {
+    updateProductionPlan(systemId, {
+      quantity: Math.max(1, Number(quantity || 1)),
+    });
+  }
+
+  function setProductionPosture(systemId, posture) {
+    updateProductionPlan(systemId, { posture });
+  }
+
+  function setSpeculationText(value) {
+    ui.planner.speculation = value ?? "";
   }
 
   return {
     ORDER_ACTIONS,
+    PRODUCTION_FOCUS_OPTIONS,
+    PRODUCTION_POSTURE_OPTIONS,
     api,
     testHarness,
     world,
     ui,
     currentSeat,
+    currentSeatHomeSystem,
     currentWorldDate,
     latestSnapshot,
     selectedSystem,
@@ -1503,12 +2274,17 @@ export function createCommandState(options = {}) {
     selectedSystemOverview,
     selectedSystemProbeStatus,
     ownedSystems,
+    productionPlannerRows,
     destinationOptions,
     anchorOptions,
+    probeOriginOptions,
     summaryCards,
     mapLayout,
     mapCanvas,
+    fleetMarkers,
+    probeMarkers,
     feedItems,
+    reconSummary,
     orderBrief,
     orderSubmission,
     fleetEntries,
@@ -1517,6 +2293,9 @@ export function createCommandState(options = {}) {
     inboundFleets,
     totalShipsAtSystem,
     routePlan,
+    starlaneSegments,
+    blockadeStatus,
+    homeBadgeForSystem,
     systemTone,
     starClass,
     translateSystemId,
@@ -1526,6 +2305,11 @@ export function createCommandState(options = {}) {
     setSelectedSystemId,
     setActiveAction,
     prepareProbeForSystem,
+    setProbeOriginSystemId,
+    setProductionFocus,
+    setProductionQuantity,
+    setProductionPosture,
+    setSpeculationText,
     submitImmediateProbe,
     submitActiveOrder,
   };

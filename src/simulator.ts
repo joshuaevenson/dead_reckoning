@@ -48,8 +48,9 @@ const SHIP_BUILD_TIME = 2;
 const DEFENSE_BUILD_SALT = 10;
 const DEFENSE_BUILD_METAL = 25;
 const DEFENSE_BUILD_TIME = 5;
+const PROBE_BUILD_METAL = 4;
+const PROBE_BUILD_TIME = 1;
 const PROBE_COST_SALT = 2;
-const PROBE_COST_METAL = 2;
 
 type PendingReport = {
   deliverDate: string;
@@ -140,6 +141,7 @@ class SimulationEngine {
     for (const system of scenario.systems) {
       this.systems.set(system.id, {
         ...system,
+        probeStockpile: system.probeStockpile ?? 0,
         captureProgress: 0,
         captureAttackerId: null,
         claimProgress: 0,
@@ -246,6 +248,11 @@ class SimulationEngine {
         garrison.ships += order.quantity;
         this.log.push(
           `${date}: ${order.factionId} completed ${order.quantity} ship(s) at ${order.systemId}`,
+        );
+      } else if (order.kind === "probe") {
+        system.probeStockpile = (system.probeStockpile ?? 0) + order.quantity;
+        this.log.push(
+          `${date}: ${order.factionId} completed ${order.quantity} probe(s) at ${order.systemId}`,
         );
       } else {
         system.defense += order.quantity;
@@ -468,12 +475,12 @@ class SimulationEngine {
     if (origin.ownerId !== command.factionId) {
       throw new Error(`Faction ${command.factionId} does not control ${command.originSystemId}`);
     }
-    if (origin.saltStockpile < PROBE_COST_SALT || origin.metalStockpile < PROBE_COST_METAL) {
+    if (origin.saltStockpile < PROBE_COST_SALT || (origin.probeStockpile ?? 0) < 1) {
       throw new Error(`System ${origin.id} lacks resources to deploy a probe`);
     }
 
     origin.saltStockpile -= PROBE_COST_SALT;
-    origin.metalStockpile -= PROBE_COST_METAL;
+    origin.probeStockpile = Math.max(0, (origin.probeStockpile ?? 0) - 1);
 
     const plan = this.graph.getPlan(command.originSystemId, command.anchorSystemId);
     const probe: ProbeState = {
@@ -481,6 +488,7 @@ class SimulationEngine {
       factionId: command.factionId,
       status: plan.travelDays === 0 ? "deployed" : "transit",
       originSystemId: command.originSystemId,
+      departureDate: date,
       currentSystemId: plan.travelDays === 0 ? command.anchorSystemId : undefined,
       anchorSystemId: command.anchorSystemId,
       arrivalDate: plan.travelDays === 0 ? undefined : addDays(date, plan.travelDays),
@@ -511,13 +519,21 @@ class SimulationEngine {
     const saltCost =
       command.kind === "ship"
         ? SHIP_BUILD_SALT * command.quantity
-        : DEFENSE_BUILD_SALT * command.quantity;
+        : command.kind === "defense"
+          ? DEFENSE_BUILD_SALT * command.quantity
+          : 0;
     const metalCost =
       command.kind === "ship"
         ? SHIP_BUILD_METAL * command.quantity
-        : DEFENSE_BUILD_METAL * command.quantity;
+        : command.kind === "defense"
+          ? DEFENSE_BUILD_METAL * command.quantity
+          : PROBE_BUILD_METAL * command.quantity;
     const buildTime =
-      command.kind === "ship" ? SHIP_BUILD_TIME : DEFENSE_BUILD_TIME;
+      command.kind === "ship"
+        ? SHIP_BUILD_TIME
+        : command.kind === "defense"
+          ? DEFENSE_BUILD_TIME
+          : PROBE_BUILD_TIME;
 
     if (system.saltStockpile < saltCost || system.metalStockpile < metalCost) {
       throw new Error(`System ${command.systemId} lacks resources for ${command.kind}`);
@@ -741,6 +757,7 @@ class SimulationEngine {
         ownerId: system.ownerId,
         saltStockpile: system.saltStockpile,
         metalStockpile: system.metalStockpile,
+        probeStockpile: system.probeStockpile ?? 0,
         defense: system.defense,
         controlAgeDays: system.controlAgeDays,
         captureProgress: system.captureProgress,
@@ -756,10 +773,14 @@ class SimulationEngine {
         status: fleet.status,
         currentSystemId: fleet.currentSystemId,
         destinationSystemId: fleet.destinationSystemId,
+        originSystemId: fleet.originSystemId,
+        departureDate: fleet.departureDate,
+        arrivalDate: fleet.arrivalDate,
         cargoSalt: fleet.cargoSalt,
         metals: fleet.metals,
         mission: fleet.mission,
         usesStarlane: fleet.usesStarlane,
+        travelPathSystemIds: fleet.travelPathSystemIds,
         interceptedCombatDaysRemaining: fleet.interceptedCombatDaysRemaining,
         interceptedByFactionId: fleet.interceptedByFactionId,
       };
@@ -774,6 +795,7 @@ class SimulationEngine {
         factionId: probe.factionId,
         status: probe.status,
         originSystemId: probe.originSystemId,
+        departureDate: probe.departureDate,
         currentSystemId: probe.currentSystemId,
         anchorSystemId: probe.anchorSystemId,
         arrivalDate: probe.arrivalDate,
@@ -1850,6 +1872,7 @@ class SimulationEngine {
       "system.defense": system.ownerId === fleet.factionId ? system.defense : 0,
       "system.salt_stockpile": system.saltStockpile,
       "system.metal_stockpile": system.metalStockpile,
+      "system.probe_stockpile": system.probeStockpile ?? 0,
       friendly: fleet.factionId,
       none: null,
     };
@@ -2232,12 +2255,15 @@ class SimulationEngine {
     return origin.saltStockpile >= totalDepartureSalt;
   }
 
-  private canBuildAtSystem(systemId: string, kind: "ship" | "defense"): boolean {
+  private canBuildAtSystem(systemId: string, kind: "ship" | "defense" | "probe"): boolean {
     const system = this.requireSystem(systemId);
     if (kind === "ship") {
       return system.saltStockpile >= SHIP_BUILD_SALT && system.metalStockpile >= SHIP_BUILD_METAL;
     }
-    return system.saltStockpile >= DEFENSE_BUILD_SALT && system.metalStockpile >= DEFENSE_BUILD_METAL;
+    if (kind === "defense") {
+      return system.saltStockpile >= DEFENSE_BUILD_SALT && system.metalStockpile >= DEFENSE_BUILD_METAL;
+    }
+    return system.metalStockpile >= PROBE_BUILD_METAL;
   }
 
   private canDeployProbe(originSystemId: string, anchorSystemId: string): boolean {
@@ -2245,7 +2271,7 @@ class SimulationEngine {
     return (
       this.safePlan(originSystemId, anchorSystemId) !== null &&
       origin.saltStockpile >= PROBE_COST_SALT &&
-      origin.metalStockpile >= PROBE_COST_METAL
+      (origin.probeStockpile ?? 0) >= 1
     );
   }
 

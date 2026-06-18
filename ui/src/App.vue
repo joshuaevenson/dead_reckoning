@@ -5,37 +5,54 @@ import Button from "primevue/button";
 import Select from "primevue/select";
 import InputNumber from "primevue/inputnumber";
 import Message from "primevue/message";
+import Textarea from "primevue/textarea";
 import { useCommandState } from "./useCommandState";
 
 const store = useCommandState();
 const {
   ORDER_ACTIONS,
+  PRODUCTION_FOCUS_OPTIONS,
+  PRODUCTION_POSTURE_OPTIONS,
   api,
   world,
   ui,
   currentSeat,
+  currentSeatHomeSystem,
   selectedSystem,
   selectedSystemFriendly,
   selectedSystemOverview,
   summaryCards,
+  productionPlannerRows,
   mapLayout,
   mapCanvas,
+  fleetMarkers,
+  probeMarkers,
+  starlaneSegments,
   feedItems,
+  reconSummary,
   orderBrief,
   orderSubmission,
   destinationOptions,
   anchorOptions,
+  probeOriginOptions,
   snapshotSystem,
   inboundFleets,
   totalShipsAtSystem,
+  blockadeStatus,
+  homeBadgeForSystem,
   systemTone,
   starClass,
+  translateSystemId,
   loadInitialData,
   selectSystem,
   setSelectedSystemId,
   setActiveAction,
   prepareProbeForSystem,
-  submitImmediateProbe,
+  setProbeOriginSystemId,
+  setProductionFocus,
+  setProductionQuantity,
+  setProductionPosture,
+  setSpeculationText,
   submitActiveOrder,
 } = store;
 
@@ -114,6 +131,7 @@ onMounted(async () => {
 
       <div class="header-meta">
         <Tag v-if="currentSeat" severity="contrast" rounded>{{ currentSeat.faction.name }}</Tag>
+        <Tag v-if="currentSeatHomeSystem" severity="secondary" rounded>Home: {{ currentSeatHomeSystem.name }}</Tag>
         <Tag v-if="world.result" severity="info" rounded>{{ world.result.endDate }}</Tag>
         <Tag :severity="api.tone" rounded>{{ api.status }}</Tag>
       </div>
@@ -134,9 +152,13 @@ onMounted(async () => {
           <div v-if="selectedSystemOverview" class="system-inspector">
             <div class="system-summary">
               <div class="system-name">{{ selectedSystemOverview.title }}</div>
+              <div v-if="selectedSystemOverview.homeLabel" class="system-subline system-home-line">{{ selectedSystemOverview.homeLabel }}</div>
               <div class="system-subline">{{ selectedSystemOverview.owner }}</div>
               <div class="system-subline">
                 {{ selectedSystemOverview.starText }} · {{ selectedSystemOverview.metalText }}
+              </div>
+              <div class="system-subline">
+                {{ selectedSystemOverview.laneText }}<span v-if="selectedSystemOverview.blockadeText"> · {{ selectedSystemOverview.blockadeText }}</span>
               </div>
             </div>
 
@@ -161,11 +183,10 @@ onMounted(async () => {
               </div>
               <Button
                 v-if="selectedSystemOverview.probeStatus.actionable"
-                label="Launch Probe"
+                label="Draft Probe Order"
                 icon="pi pi-search"
                 severity="contrast"
-                :loading="api.submitting"
-                @click="submitImmediateProbe(selectedSystem.system.id)"
+                @click="prepareProbeForSystem(selectedSystem.system.id)"
               />
             </div>
           </div>
@@ -183,6 +204,49 @@ onMounted(async () => {
               :style="{ width: `${mapCanvas.width}px`, height: `${mapCanvas.height}px` }"
               @click="setSelectedSystemId(null)"
             >
+              <g class="starlane-layer">
+                <g v-for="lane in starlaneSegments" :key="lane.laneId">
+                  <line
+                    :class="['starlane-line', `blockade-${lane.blockadeTone}`]"
+                    :x1="lane.x1"
+                    :y1="lane.y1"
+                    :x2="lane.x2"
+                    :y2="lane.y2"
+                  />
+                  <g v-if="lane.blockadeTone !== 'none'" :transform="`translate(${lane.midpointX} ${lane.midpointY})`">
+                    <circle class="starlane-blockade-glow" r="8" />
+                    <circle :class="['starlane-blockade-core', `blockade-${lane.blockadeTone}`]" r="4.5" />
+                  </g>
+                </g>
+              </g>
+
+              <g class="fleet-layer">
+                <g
+                  v-for="marker in fleetMarkers"
+                  :key="marker.fleetId"
+                  class="fleet-marker"
+                  :transform="`translate(${marker.x} ${marker.y}) rotate(${marker.angle})`"
+                >
+                  <title>{{ marker.detail }}</title>
+                  <path :class="['fleet-arrow', `fleet-${marker.tone}`]" d="M -10 -6 L 10 0 L -10 6 L -4 0 Z" />
+                  <text x="0" y="-10" text-anchor="middle" class="fleet-count">{{ marker.label }}</text>
+                </g>
+              </g>
+
+              <g class="probe-layer">
+                <g
+                  v-for="marker in probeMarkers"
+                  :key="marker.probeId"
+                  class="probe-marker"
+                  :transform="`translate(${marker.x} ${marker.y}) rotate(${marker.angle})`"
+                >
+                  <title>{{ marker.detail }}</title>
+                  <circle v-if="marker.status === 'on_station'" class="probe-node" r="7" />
+                  <path v-else class="probe-arrow" d="M 0 -7 L 7 0 L 0 7 L -7 0 Z" />
+                  <text x="0" y="3" text-anchor="middle" class="probe-text">{{ marker.label }}</text>
+                </g>
+              </g>
+
               <g
                 v-for="system in world.scenario?.systems ?? []"
                 :key="system.id"
@@ -201,6 +265,21 @@ onMounted(async () => {
                   r="16"
                 />
                 <circle :class="['system-core', starClass(system.starType)]" :r="system.starType === 'giant_or_exotic' ? 10 : 8" />
+                <g v-if="homeBadgeForSystem(system.id)" transform="translate(0 -28)">
+                  <rect
+                    :class="['system-home-badge', `badge-${homeBadgeForSystem(system.id).tone}`]"
+                    x="-18"
+                    y="-8"
+                    width="36"
+                    height="16"
+                    rx="8"
+                  />
+                  <text x="0" y="4" text-anchor="middle" class="system-home-text">{{ homeBadgeForSystem(system.id).label }}</text>
+                </g>
+                <g v-if="blockadeStatus(system.id).status !== 'none'" transform="translate(-19 -22)">
+                  <rect :class="['system-blockade-badge', `blockade-${blockadeStatus(system.id).status}`]" x="-10" y="-7" width="20" height="14" rx="7" />
+                  <text x="0" y="4" text-anchor="middle" class="system-blockade-text">B</text>
+                </g>
                 <text x="0" y="34" text-anchor="middle" class="system-label">{{ system.name }}</text>
                 <g v-if="inboundFleets(system.id).length > 0">
                   <circle cx="16" cy="-16" r="10" class="incoming-marker" />
@@ -220,8 +299,110 @@ onMounted(async () => {
               <div class="panel-title">Latest Reports</div>
             </div>
           </div>
-          <Tag severity="info" rounded>{{ feedItems.length }} items</Tag>
         </div>
+
+        <div v-if="reconSummary.total > 0" class="recon-strip">
+          <div class="recon-header">
+            <div>
+              <div class="panel-kicker">Recon Net</div>
+              <div class="recon-title">{{ reconSummary.onStation }} on station · {{ reconSummary.inTransit }} in transit</div>
+            </div>
+            <Tag severity="contrast" rounded>{{ reconSummary.total }} probes</Tag>
+          </div>
+          <div class="recon-list">
+            <div
+              v-for="item in reconSummary.items.slice(0, 4)"
+              :key="item.probeId"
+              :class="['recon-item', `recon-${item.status}`]"
+            >
+              <div class="recon-item-top">
+                <strong>{{ item.label }}</strong>
+                <span>{{ item.statusLabel }}</span>
+              </div>
+              <div class="recon-item-detail">{{ item.detail }}</div>
+            </div>
+          </div>
+        </div>
+
+        <section class="planning-strip">
+          <div class="planning-header">
+            <div>
+              <div class="panel-kicker">Campaign Board</div>
+              <div class="recon-title">Production Schedules</div>
+            </div>
+            <Tag severity="secondary" rounded>{{ productionPlannerRows.length }} systems</Tag>
+          </div>
+
+          <div v-if="productionPlannerRows.length > 0" class="production-sheet">
+            <div v-for="row in productionPlannerRows" :key="row.systemId" class="production-row">
+              <div class="production-top">
+                <div>
+                  <strong>{{ row.systemName }}</strong>
+                  <div class="production-meta">{{ row.outputText }}</div>
+                </div>
+                <div class="production-stores">{{ row.storesText }}</div>
+              </div>
+
+              <div class="production-fields">
+                <div class="production-field">
+                  <label>Focus</label>
+                  <Select
+                    :model-value="row.focus"
+                    :options="PRODUCTION_FOCUS_OPTIONS"
+                    option-label="label"
+                    option-value="value"
+                    fluid
+                    @update:model-value="(value) => setProductionFocus(row.systemId, value)"
+                  />
+                </div>
+
+                <div class="production-field production-quantity">
+                  <label>Target</label>
+                  <InputNumber
+                    :model-value="row.quantity"
+                    :min="1"
+                    show-buttons
+                    fluid
+                    @update:model-value="(value) => setProductionQuantity(row.systemId, value)"
+                  />
+                </div>
+
+                <div class="production-field">
+                  <label>Posture</label>
+                  <Select
+                    :model-value="row.posture"
+                    :options="PRODUCTION_POSTURE_OPTIONS"
+                    option-label="label"
+                    option-value="value"
+                    fluid
+                    @update:model-value="(value) => setProductionPosture(row.systemId, value)"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-else class="planning-empty">
+            Hold a system to begin drafting production schedules.
+          </div>
+        </section>
+
+        <section class="speculation-strip">
+          <div class="planning-header">
+            <div>
+              <div class="panel-kicker">Speculation</div>
+              <div class="recon-title">Private Notebook</div>
+            </div>
+          </div>
+
+          <Textarea
+            :model-value="ui.planner.speculation"
+            class="speculation-textarea"
+            auto-resize
+            rows="6"
+            placeholder="What is the enemy massing for? Which lane looks exposed? Where should the next attack fall if their probe survives?"
+            @update:model-value="setSpeculationText"
+          />
+        </section>
 
         <div class="feed-scroll">
           <article
@@ -276,9 +457,21 @@ onMounted(async () => {
         <template v-else>
           <div class="orders-layout">
             <div class="form-grid">
-              <div class="field">
+              <div v-if="ui.activeAction !== 'deploy_probe'" class="field">
                 <label>Origin</label>
                 <div class="static-field">{{ selectedSystem.system.name }}</div>
+              </div>
+
+              <div v-else class="field">
+                <label>Origin</label>
+                <Select
+                  :model-value="ui.orderDraft.probeOriginId"
+                  :options="probeOriginOptions"
+                  option-label="label"
+                  option-value="value"
+                  fluid
+                  @update:model-value="setProbeOriginSystemId"
+                />
               </div>
 
               <div v-if="ui.activeAction !== 'deploy_probe'" class="field">
@@ -305,6 +498,13 @@ onMounted(async () => {
               <div v-if="ui.activeAction === 'deploy_probe'" class="field">
                 <label>Anchor</label>
                 <Select v-model="ui.orderDraft.anchorId" :options="anchorOptions" option-label="label" option-value="value" fluid />
+              </div>
+
+              <div v-if="ui.activeAction === 'deploy_probe'" class="field">
+                <label>Probe ETA</label>
+                <div class="static-field">
+                  {{ orderBrief.lines.find((line) => line.startsWith('Estimated arrival:'))?.replace('Estimated arrival: ', '') ?? 'Unknown' }}
+                </div>
               </div>
 
               <div v-if="ui.activeAction === 'trade'" class="field">

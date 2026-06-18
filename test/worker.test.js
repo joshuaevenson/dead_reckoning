@@ -43,3 +43,110 @@ test("worker /simulate returns scenario result", async () => {
   assert.equal(body.passed, true);
   assert.equal(body.scenario, "economy_frontier_claim");
 });
+
+test("worker /simulate supports building probes from metal and launching multiple probes with salt", async () => {
+  const scenario = {
+    name: "probe_build_and_launch",
+    seed: 7,
+    startDate: "2240-01-01",
+    durationDays: 3,
+    factions: [
+      {
+        id: "blue",
+        name: "Aster Crown",
+        homeSystemId: "home",
+      },
+    ],
+    systems: [
+      {
+        id: "home",
+        name: "Sol",
+        position: { x: 0, y: 0 },
+        starType: "yellow_star",
+        saltProfile: "none",
+        metalRichness: "poor",
+        ownerId: "blue",
+        saltStockpile: 10,
+        metalStockpile: 10,
+        probeStockpile: 0,
+        infrastructure: 5,
+        defense: 2,
+        controlAgeDays: 100,
+        garrisonShips: { blue: 3 },
+      },
+      {
+        id: "target_a",
+        name: "Barnard's Star",
+        position: { x: 2, y: 0 },
+        starType: "red_dwarf",
+        saltProfile: "none",
+        metalRichness: "poor",
+        ownerId: null,
+        saltStockpile: 0,
+        metalStockpile: 0,
+        probeStockpile: 0,
+        infrastructure: 0,
+        defense: 0,
+        controlAgeDays: 0,
+      },
+      {
+        id: "target_b",
+        name: "Wolf 359",
+        position: { x: 3, y: 1 },
+        starType: "red_dwarf",
+        saltProfile: "none",
+        metalRichness: "poor",
+        ownerId: null,
+        saltStockpile: 0,
+        metalStockpile: 0,
+        probeStockpile: 0,
+        infrastructure: 0,
+        defense: 0,
+        controlAgeDays: 0,
+      },
+    ],
+    commands: [
+      {
+        type: "build",
+        at: "2240-01-01",
+        factionId: "blue",
+        systemId: "home",
+        kind: "probe",
+        quantity: 2,
+      },
+      {
+        type: "deploy_probe",
+        at: "2240-01-02",
+        factionId: "blue",
+        originSystemId: "home",
+        anchorSystemId: "target_a",
+        reportDestinationSystemId: "home",
+      },
+      {
+        type: "deploy_probe",
+        at: "2240-01-02",
+        factionId: "blue",
+        originSystemId: "home",
+        anchorSystemId: "target_b",
+        reportDestinationSystemId: "home",
+      },
+    ],
+  };
+
+  const response = await worker.fetch(
+    new Request("https://example.com/api/simulate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(scenario),
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  const finalSnapshot = body.snapshots[body.snapshots.length - 1];
+  const activeProbes = Object.values(finalSnapshot.probes);
+
+  assert.equal(finalSnapshot.systems.home.probeStockpile, 0);
+  assert.equal(activeProbes.length, 2);
+  assert.equal(activeProbes.every((probe) => probe.status === "transit"), true);
+});

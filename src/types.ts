@@ -104,6 +104,7 @@ export interface ProbeState {
   factionId: string;
   status: "transit" | "deployed" | "destroyed";
   originSystemId: string;
+  departureDate?: string;
   currentSystemId?: string;
   anchorSystemId: string;
   arrivalDate?: string;
@@ -160,7 +161,7 @@ export interface BuildOrder {
   id: string;
   factionId: string;
   systemId: string;
-  kind: "ship" | "defense";
+  kind: "ship" | "defense" | "probe";
   quantity: number;
   completeDate: string;
 }
@@ -176,6 +177,7 @@ export interface SystemDefinition {
   ownerId: string | null;
   saltStockpile: number;
   metalStockpile: number;
+  probeStockpile?: number;
   infrastructure: number;
   defense: number;
   controlAgeDays: number;
@@ -265,7 +267,7 @@ export interface BuildCommand {
   at: string;
   factionId: string;
   systemId: string;
-  kind: "ship" | "defense";
+  kind: "ship" | "defense" | "probe";
   quantity: number;
 }
 
@@ -331,6 +333,7 @@ export interface SnapshotSystemView {
   ownerId: string | null;
   saltStockpile: number;
   metalStockpile: number;
+  probeStockpile: number;
   defense: number;
   controlAgeDays: number;
   captureProgress: number;
@@ -343,10 +346,14 @@ export interface SnapshotFleetView {
   status: FleetStatus;
   currentSystemId?: string;
   destinationSystemId?: string;
+  originSystemId?: string;
+  departureDate?: string;
+  arrivalDate?: string;
   cargoSalt: number;
   metals: number;
   mission: Mission;
   usesStarlane?: boolean;
+  travelPathSystemIds?: string[];
   interceptedCombatDaysRemaining?: number;
   interceptedByFactionId?: string;
 }
@@ -355,6 +362,7 @@ export interface SnapshotProbeView {
   factionId: string;
   status: ProbeState["status"];
   originSystemId?: string;
+  departureDate?: string;
   currentSystemId?: string;
   anchorSystemId: string;
   arrivalDate?: string;

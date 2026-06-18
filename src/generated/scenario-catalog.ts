@@ -105,28 +105,34 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
     "factions": [
       {
         "id": "blue",
-        "name": "Blue League",
+        "name": "Aster Crown",
         "homeSystemId": "home"
       },
       {
         "id": "red",
-        "name": "Red Compact",
+        "name": "Crimson Wake",
         "homeSystemId": "enemy_home"
       }
     ],
     "systems": [
       {
         "id": "home",
-        "name": "Home",
+        "name": "Sol",
         "position": {
           "x": 0,
           "y": 0
         },
         "starType": "yellow_star",
         "metalRichness": "standard",
+        "starlaneLinks": [
+          "watch",
+          "frontier_west",
+          "frontier_east"
+        ],
         "ownerId": "blue",
         "saltStockpile": 50,
         "metalStockpile": 50,
+        "probeStockpile": 3,
         "infrastructure": 8,
         "defense": 5,
         "controlAgeDays": 200,
@@ -136,16 +142,21 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       },
       {
         "id": "frontier_west",
-        "name": "Frontier West",
+        "name": "Barnard's Star",
         "position": {
           "x": 2,
           "y": 2
         },
         "starType": "yellow_star",
         "metalRichness": "rich",
+        "starlaneLinks": [
+          "home",
+          "watch"
+        ],
         "ownerId": "blue",
         "saltStockpile": 20,
         "metalStockpile": 20,
+        "probeStockpile": 0,
         "infrastructure": 2,
         "defense": 1,
         "controlAgeDays": 30,
@@ -155,16 +166,21 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       },
       {
         "id": "frontier_east",
-        "name": "Frontier East",
+        "name": "Sirius",
         "position": {
           "x": 2,
           "y": -2
         },
         "starType": "yellow_star",
         "metalRichness": "standard",
+        "starlaneLinks": [
+          "home",
+          "watch"
+        ],
         "ownerId": "blue",
         "saltStockpile": 20,
         "metalStockpile": 20,
+        "probeStockpile": 1,
         "infrastructure": 2,
         "defense": 1,
         "controlAgeDays": 30,
@@ -174,16 +190,20 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       },
       {
         "id": "enemy_home",
-        "name": "Enemy Home",
+        "name": "Tau Ceti",
         "position": {
           "x": 2,
           "y": 0
         },
         "starType": "yellow_star",
         "metalRichness": "standard",
+        "starlaneLinks": [
+          "watch"
+        ],
         "ownerId": "red",
         "saltStockpile": 120,
         "metalStockpile": 80,
+        "probeStockpile": 2,
         "infrastructure": 10,
         "defense": 6,
         "controlAgeDays": 200,
@@ -193,16 +213,23 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       },
       {
         "id": "watch",
-        "name": "Watchpoint",
+        "name": "Ross 154",
         "position": {
           "x": 1,
           "y": 0
         },
         "starType": "red_dwarf",
         "metalRichness": "poor",
+        "starlaneLinks": [
+          "home",
+          "frontier_west",
+          "frontier_east",
+          "enemy_home"
+        ],
         "ownerId": null,
         "saltStockpile": 0,
         "metalStockpile": 0,
+        "probeStockpile": 0,
         "infrastructure": 0,
         "defense": 0,
         "controlAgeDays": 0
@@ -738,6 +765,129 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       }
     ]
   },
+  "probe_origin_choice": {
+    "name": "probe_origin_choice",
+    "seed": 19,
+    "startDate": "2240-05-01",
+    "durationDays": 2,
+    "factions": [
+      {
+        "id": "blue",
+        "name": "Aster Crown",
+        "homeSystemId": "blue_home"
+      },
+      {
+        "id": "green",
+        "name": "Verdant Bastion",
+        "homeSystemId": "green_home"
+      }
+    ],
+    "systems": [
+      {
+        "id": "blue_home",
+        "name": "Sol",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "starType": "yellow_star",
+        "saltProfile": "none",
+        "metalRichness": "poor",
+        "starlaneLinks": [
+          "blue_frontier"
+        ],
+        "ownerId": "blue",
+        "saltStockpile": 20,
+        "metalStockpile": 20,
+        "probeStockpile": 3,
+        "infrastructure": 8,
+        "defense": 4,
+        "controlAgeDays": 150,
+        "garrisonShips": {
+          "blue": 5
+        }
+      },
+      {
+        "id": "blue_frontier",
+        "name": "Barnard's Star",
+        "position": {
+          "x": 2,
+          "y": 0
+        },
+        "starType": "red_dwarf",
+        "saltProfile": "none",
+        "metalRichness": "poor",
+        "starlaneLinks": [
+          "blue_home",
+          "green_target"
+        ],
+        "ownerId": "blue",
+        "saltStockpile": 1,
+        "metalStockpile": 1,
+        "probeStockpile": 0,
+        "infrastructure": 2,
+        "defense": 1,
+        "controlAgeDays": 40,
+        "garrisonShips": {
+          "blue": 2
+        }
+      },
+      {
+        "id": "green_target",
+        "name": "Wolf 359",
+        "position": {
+          "x": 5,
+          "y": 0
+        },
+        "starType": "yellow_star",
+        "saltProfile": "none",
+        "metalRichness": "rich",
+        "starlaneLinks": [
+          "blue_frontier",
+          "green_home"
+        ],
+        "ownerId": null,
+        "saltStockpile": 0,
+        "metalStockpile": 0,
+        "probeStockpile": 0,
+        "infrastructure": 1,
+        "defense": 0,
+        "controlAgeDays": 0
+      },
+      {
+        "id": "green_home",
+        "name": "Tau Ceti",
+        "position": {
+          "x": 8,
+          "y": 0
+        },
+        "starType": "yellow_star",
+        "saltProfile": "none",
+        "metalRichness": "poor",
+        "starlaneLinks": [
+          "green_target"
+        ],
+        "ownerId": "green",
+        "saltStockpile": 20,
+        "metalStockpile": 20,
+        "probeStockpile": 2,
+        "infrastructure": 8,
+        "defense": 4,
+        "controlAgeDays": 150,
+        "garrisonShips": {
+          "green": 5
+        }
+      }
+    ],
+    "expectations": [
+      {
+        "at": "2240-05-02",
+        "path": "systems.blue_frontier.ownerId",
+        "op": "eq",
+        "value": "blue"
+      }
+    ]
+  },
   "profile_comms_discipline": {
     "name": "profile_comms_discipline",
     "seed": 37,
@@ -979,13 +1129,13 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
     "factions": [
       {
         "id": "blue",
-        "name": "Blue League",
+        "name": "Aster Crown",
         "homeSystemId": "blue_home",
         "commanderProfileId": "expander"
       },
       {
         "id": "green",
-        "name": "Green Bastion",
+        "name": "Verdant Bastion",
         "homeSystemId": "green_home",
         "commanderProfileId": "turtle"
       }
@@ -993,16 +1143,20 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
     "systems": [
       {
         "id": "blue_home",
-        "name": "Blue Home",
+        "name": "Sol",
         "position": {
           "x": 0,
           "y": 0
         },
         "starType": "yellow_star",
         "metalRichness": "standard",
+        "starlaneLinks": [
+          "blue_frontier_a"
+        ],
         "ownerId": "blue",
         "saltStockpile": 60,
         "metalStockpile": 80,
+        "probeStockpile": 3,
         "infrastructure": 10,
         "defense": 6,
         "controlAgeDays": 200,
@@ -1012,48 +1166,61 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       },
       {
         "id": "blue_frontier_a",
-        "name": "Blue Frontier A",
+        "name": "Barnard's Star",
         "position": {
           "x": 1,
           "y": 0
         },
         "starType": "yellow_star",
         "metalRichness": "rich",
+        "starlaneLinks": [
+          "blue_home",
+          "blue_frontier_b"
+        ],
         "ownerId": null,
         "saltStockpile": 0,
         "metalStockpile": 0,
+        "probeStockpile": 0,
         "infrastructure": 1,
         "defense": 0,
         "controlAgeDays": 0
       },
       {
         "id": "blue_frontier_b",
-        "name": "Blue Frontier B",
+        "name": "Wolf 359",
         "position": {
           "x": 2,
           "y": 0
         },
         "starType": "red_dwarf",
         "metalRichness": "exceptional",
+        "starlaneLinks": [
+          "blue_frontier_a"
+        ],
         "ownerId": null,
         "saltStockpile": 0,
         "metalStockpile": 0,
+        "probeStockpile": 0,
         "infrastructure": 1,
         "defense": 0,
         "controlAgeDays": 0
       },
       {
         "id": "green_home",
-        "name": "Green Home",
+        "name": "Tau Ceti",
         "position": {
           "x": 6,
           "y": 0
         },
         "starType": "yellow_star",
         "metalRichness": "standard",
+        "starlaneLinks": [
+          "green_frontier_a"
+        ],
         "ownerId": "green",
         "saltStockpile": 60,
         "metalStockpile": 80,
+        "probeStockpile": 3,
         "infrastructure": 10,
         "defense": 6,
         "controlAgeDays": 200,
@@ -1063,32 +1230,41 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
       },
       {
         "id": "green_frontier_a",
-        "name": "Green Frontier A",
+        "name": "Epsilon Eridani",
         "position": {
           "x": 7,
           "y": 0
         },
         "starType": "yellow_star",
         "metalRichness": "rich",
+        "starlaneLinks": [
+          "green_home",
+          "green_frontier_b"
+        ],
         "ownerId": null,
         "saltStockpile": 0,
         "metalStockpile": 0,
+        "probeStockpile": 0,
         "infrastructure": 1,
         "defense": 0,
         "controlAgeDays": 0
       },
       {
         "id": "green_frontier_b",
-        "name": "Green Frontier B",
+        "name": "40 Eridani",
         "position": {
           "x": 8,
           "y": 0
         },
         "starType": "red_dwarf",
         "metalRichness": "exceptional",
+        "starlaneLinks": [
+          "green_frontier_a"
+        ],
         "ownerId": null,
         "saltStockpile": 0,
         "metalStockpile": 0,
+        "probeStockpile": 0,
         "infrastructure": 1,
         "defense": 0,
         "controlAgeDays": 0
