@@ -194,37 +194,6 @@ onMounted(async () => {
       </div>
     </header>
 
-    <div class="top-stack">
-      <Message v-if="api.error" severity="error" class="loading-message">
-        {{ api.error }}
-      </Message>
-
-      <section v-if="dailyBrief" class="daily-brief-panel">
-        <div class="planning-header">
-          <div>
-            <div class="panel-kicker">Daily Brief</div>
-            <div class="panel-title">One Opportunity, One Threat, One Lesson</div>
-          </div>
-          <Tag severity="contrast" rounded>{{ dailyBrief.date }}</Tag>
-        </div>
-
-        <div class="daily-brief-grid">
-          <article
-            v-for="item in dailyBrief.items"
-            :key="item.key"
-            :class="['feed-card', 'daily-brief-card', `feed-tone-${item.severity === 'contrast' ? 'info' : item.severity}`]"
-          >
-            <div class="feed-card-top">
-              <div class="feed-kicker">{{ item.label }}</div>
-              <Tag :severity="item.severity" rounded>{{ item.source }}</Tag>
-            </div>
-            <div class="feed-title">{{ item.title }}</div>
-            <p class="feed-copy">{{ item.summary }}</p>
-          </article>
-        </div>
-      </section>
-    </div>
-
     <div class="workspace-shell">
       <aside class="workspace-rail">
         <div class="workspace-rail-top">
@@ -248,6 +217,10 @@ onMounted(async () => {
       </aside>
 
       <main class="workspace-stage">
+        <Message v-if="api.error" severity="error" class="loading-message">
+          {{ api.error }}
+        </Message>
+
         <section v-if="ui.activeWorkspace === 'map'" class="workspace-page workspace-map-page">
           <div class="map-main-layout">
             <section class="map-panel workspace-map-panel">
@@ -910,44 +883,90 @@ onMounted(async () => {
           <section class="feed-panel reports-main-panel">
             <div class="feed-header">
               <div>
-                <div class="panel-kicker">Signal Feed</div>
-                <div class="panel-title">Report Queue</div>
+                <div class="panel-kicker">Advisors</div>
+                <div class="panel-title">Advisor Desk</div>
               </div>
               <Tag severity="info" rounded>{{ feedItems.length }} open</Tag>
             </div>
 
-            <div v-if="feedItems.length > 0" class="feed-scroll reports-scroll">
-              <article
-                v-for="item in feedItems"
-                :key="item.id"
-                :class="['feed-card', `feed-tone-${item.tone}`]"
-              >
-                <div class="feed-card-top">
-                  <div class="feed-kicker">{{ item.kicker }}</div>
-                  <Tag :severity="item.tone" rounded>{{ item.date }}</Tag>
+            <div class="reports-main-stack">
+              <section v-if="dailyBrief" class="reports-brief-section">
+                <div class="planning-header reports-brief-header">
+                  <div>
+                    <div class="panel-kicker">Morning Brief</div>
+                    <div class="panel-title">Council Priorities</div>
+                  </div>
+                  <Tag severity="contrast" rounded>{{ dailyBrief.date }}</Tag>
                 </div>
-                <div class="feed-title">{{ item.title }}</div>
-                <p class="feed-copy">{{ item.summary }}</p>
-                <p class="feed-impact"><span>Analysis:</span> {{ item.analysis }}</p>
-                <div class="feed-actions">
-                  <Button
-                    label="Follow Up"
-                    icon="pi pi-bookmark"
-                    severity="secondary"
-                    outlined
-                    @click="markReportForFollowUp(item)"
-                  />
-                  <Button
-                    label="Archive"
-                    icon="pi pi-check"
-                    severity="contrast"
-                    @click="archiveReportItem(item)"
-                  />
+                <div class="reports-brief-copy">
+                  These are the advisors' framed priorities for the day, separate from the raw signal interpretations below.
                 </div>
-              </article>
-            </div>
-            <div v-else class="map-empty-state reports-empty-state reports-empty-main">
-              The live queue is clear. Archived items remain available on the right, and anything marked for follow-up waits in the private notebook.
+
+                <div class="reports-brief-list">
+                  <article
+                    v-for="item in dailyBrief.items"
+                    :key="item.key"
+                    :class="[
+                      'feed-card',
+                      'reports-brief-card',
+                      `feed-tone-${item.severity === 'contrast' ? 'info' : item.severity}`,
+                    ]"
+                  >
+                    <div class="feed-card-top">
+                      <div class="feed-kicker">{{ item.label }}</div>
+                      <Tag :severity="item.severity" rounded>{{ item.advisorName }}</Tag>
+                    </div>
+                    <div class="feed-title">{{ item.title }}</div>
+                    <div class="feed-byline">{{ item.advisorRole }} · {{ item.source }}</div>
+                    <p class="feed-copy">{{ item.summary }}</p>
+                  </article>
+                </div>
+              </section>
+
+              <section class="reports-queue-section">
+                <div class="planning-header reports-queue-header">
+                  <div>
+                    <div class="panel-kicker">Signal Queue</div>
+                    <div class="panel-title">Advisor Interpretations</div>
+                  </div>
+                  <Tag severity="info" rounded>{{ feedItems.length }} open</Tag>
+                </div>
+
+                <div v-if="feedItems.length > 0" class="feed-scroll reports-scroll">
+                  <article
+                    v-for="item in feedItems"
+                    :key="item.id"
+                    :class="['feed-card', `feed-tone-${item.tone}`]"
+                  >
+                    <div class="feed-card-top">
+                      <div class="feed-kicker">{{ item.kicker }}</div>
+                      <Tag :severity="item.tone" rounded>{{ item.date }}</Tag>
+                    </div>
+                    <div class="feed-title">{{ item.title }}</div>
+                    <div class="feed-byline">{{ item.advisorName }} · {{ item.advisorRole }}</div>
+                    <p class="feed-copy">{{ item.summary }}</p>
+                    <p class="feed-impact"><span>Consequence:</span> {{ item.analysis }}</p>
+                    <div class="feed-actions">
+                      <Button
+                        label="Follow Up"
+                        icon="pi pi-bookmark"
+                        severity="secondary"
+                        outlined
+                        @click="markReportForFollowUp(item)"
+                      />
+                      <Button
+                        label="Archive"
+                        icon="pi pi-check"
+                        severity="contrast"
+                        @click="archiveReportItem(item)"
+                      />
+                    </div>
+                  </article>
+                </div>
+                <div v-else class="map-empty-state reports-empty-state reports-empty-main">
+                  The live queue is clear. Archived items remain available on the right, and anything marked for follow-up waits in the private notebook.
+                </div>
+              </section>
             </div>
           </section>
 
@@ -972,6 +991,7 @@ onMounted(async () => {
                     <Tag :severity="item.tone" rounded>{{ item.date }}</Tag>
                   </div>
                   <div class="feed-title">{{ item.title }}</div>
+                  <div class="feed-byline">{{ item.advisorName ?? "Advisor queue" }} · {{ item.advisorRole ?? item.kicker }}</div>
                   <p class="feed-copy">{{ item.summary }}</p>
                   <div class="feed-actions feed-actions-compact">
                     <Button
@@ -1151,8 +1171,9 @@ onMounted(async () => {
                       <Tag :severity="item.tone" rounded>{{ item.date }}</Tag>
                     </div>
                     <div class="feed-title">{{ item.title }}</div>
+                    <div class="feed-byline">{{ item.advisorName ?? "Advisor queue" }} · {{ item.advisorRole ?? item.kicker }}</div>
                     <p class="feed-copy">{{ item.summary }}</p>
-                    <p class="feed-impact"><span>Analysis:</span> {{ item.analysis }}</p>
+                    <p class="feed-impact"><span>Consequence:</span> {{ item.analysis }}</p>
                     <div class="feed-actions feed-actions-compact">
                       <Button
                         label="Return to Queue"

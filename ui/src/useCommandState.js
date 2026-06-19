@@ -33,11 +33,11 @@ const ORDER_ACTIONS = [
   { key: "trade", label: "Trade", icon: "pi pi-sync" },
 ];
 const WORKSPACE_VIEWS = [
+  { key: "reports", label: "Advisors", icon: "pi pi-megaphone" },
   { key: "map", label: "Map", icon: "pi pi-globe" },
   { key: "probes", label: "Probes", icon: "pi pi-search" },
   { key: "operations", label: "Ship Ops", icon: "pi pi-send" },
   { key: "diplomacy", label: "Diplomacy", icon: "pi pi-users" },
-  { key: "reports", label: "Reports", icon: "pi pi-megaphone" },
   { key: "production", label: "Production", icon: "pi pi-sliders-h" },
   { key: "notebook", label: "Notebook", icon: "pi pi-book" },
 ];
@@ -103,6 +103,28 @@ const STRATEGIC_MARKING_OPTIONS = [
 const STRATEGIC_MARKINGS_BY_VALUE = new Map(
   STRATEGIC_MARKING_OPTIONS.map((option) => [option.value, option]),
 );
+const ADVISOR_PROFILES = {
+  marshal: {
+    advisorId: "marshal",
+    advisorName: "Marshal Hale",
+    role: "Fleet Consequences",
+  },
+  spymaster: {
+    advisorId: "spymaster",
+    advisorName: "Spymaster Vey",
+    role: "Reconnaissance",
+  },
+  steward: {
+    advisorId: "steward",
+    advisorName: "Steward Sen",
+    role: "Logistics",
+  },
+  envoy: {
+    advisorId: "envoy",
+    advisorName: "Envoy Tal",
+    role: "Signals",
+  },
+};
 
 function defaultProductionLine(index) {
   return {
@@ -290,6 +312,10 @@ function cloneReportItem(item) {
     summary: item.summary,
     analysis: item.analysis,
     tone: item.tone,
+    advisorId: item.advisorId,
+    advisorName: item.advisorName,
+    advisorRole: item.advisorRole,
+    advisorSource: item.advisorSource,
   };
 }
 
@@ -310,6 +336,97 @@ function findActionDefinition(actionKey) {
 
 function strategicMarkingDefinition(value) {
   return STRATEGIC_MARKINGS_BY_VALUE.get(value) ?? null;
+}
+
+function advisorProfile(advisorId) {
+  return ADVISOR_PROFILES[advisorId] ?? ADVISOR_PROFILES.envoy;
+}
+
+function advisorProfileForReport(item) {
+  if (!item?.kicker) {
+    return advisorProfile("envoy");
+  }
+
+  if (
+    item.kicker === "Recon launched"
+    || item.kicker === "Recon on station"
+  ) {
+    return advisorProfile("spymaster");
+  }
+
+  if (
+    item.kicker === "Trade signal"
+    || item.kicker === "Supply convoy"
+    || item.kicker === "Frontier claim"
+    || item.kicker === "Expansion burn"
+    || item.kicker === "Reinforcement burn"
+  ) {
+    return advisorProfile("steward");
+  }
+
+  if (
+    item.kicker === "Incoming threat"
+    || item.kicker === "Attack burn"
+    || item.kicker === "Blockade burn"
+    || item.kicker === "Battle report"
+    || item.kicker === "Control shift"
+    || item.kicker === "Arrival burn"
+  ) {
+    return advisorProfile("marshal");
+  }
+
+  return advisorProfile("envoy");
+}
+
+function advisorConsequenceForReport(item, profile) {
+  if (!item) {
+    return "";
+  }
+
+  switch (item.kicker) {
+    case "Recon launched":
+      return `${profile.advisorName} says the real gain is warning time: once the probe arrives, we stop defending every rumor at once.`;
+    case "Recon on station":
+      return `${profile.advisorName} says this closes a blind angle, which means future enemy burns here can be answered with commitment instead of guesswork.`;
+    case "Trade signal":
+      return `${profile.advisorName} reads this as compounding strength: quiet cargo runs often decide who can afford the decisive move later.`;
+    case "Supply convoy":
+      return `${profile.advisorName} reads endurance here. If the convoy lands cleanly, the target can absorb pressure longer than its fleet count alone suggests.`;
+    case "Blockade burn":
+      return `${profile.advisorName} warns that this is about lane control, not only local ships. If the blockade sticks, movement through the lane gets riskier and slower to answer.`;
+    case "Reinforcement burn":
+      return `${profile.advisorName} reads a posture shift. Reinforcements make the next fight cheaper for them and more expensive for anyone arriving late.`;
+    case "Expansion burn":
+    case "Frontier claim":
+      return `${profile.advisorName} says frontier gains snowball. A quiet claim today becomes extra salt, extra options, and harder eviction tomorrow.`;
+    case "Incoming threat":
+    case "Attack burn":
+      return `${profile.advisorName} frames this as tempo pressure. If we answer from the wrong reserve, the attacker chooses both the fight and the follow-up.`;
+    case "Battle report":
+      return `${profile.advisorName} says the lesson is not just who traded well, but who can replace losses first and keep control after the shooting stops.`;
+    case "Control shift":
+      return `${profile.advisorName} treats this as a consequence chain: once local control broke, ownership followed immediately and the surrounding lane picture changed with it.`;
+    case "Arrival burn":
+      return `${profile.advisorName} says arrivals matter because they pin choices. A force landing in place can force us to defend the system and the nearby lane at the same time.`;
+    default:
+      return item.analysis;
+  }
+}
+
+function withAdvisorContext(item) {
+  if (!item) {
+    return item;
+  }
+
+  const profile = advisorProfileForReport(item);
+  return {
+    ...item,
+    advisorId: item.advisorId ?? profile.advisorId,
+    advisorName: item.advisorName ?? profile.advisorName,
+    advisorRole: item.advisorRole ?? profile.role,
+    advisorSource: item.advisorSource ?? item.kicker,
+    analysis: advisorConsequenceForReport(item, profile),
+  };
 }
 
 function hasValidPosition(system) {
@@ -428,7 +545,7 @@ export function createCommandState(options = {}) {
   const ui = reactive({
     seatFactionId: null,
     selectedSystemId: null,
-    activeWorkspace: "map",
+    activeWorkspace: "reports",
     activeAction: "attack",
     pendingProbeOrders: {},
     plannerLoadedKey: null,
@@ -2009,16 +2126,19 @@ function effectiveMass(ships, cargoSalt, metals) {
 
   const feedItems = computed(() =>
     rawFeedItems.value
+      .map((item) => withAdvisorContext(item))
       .filter((item) => !processedReportIds.value.has(item.id))
       .slice(0, 12),
   );
 
   const archivedReportItems = computed(() =>
-    sortReportsByDate(Object.values(ui.planner.archivedReportsById ?? {})),
+    sortReportsByDate(Object.values(ui.planner.archivedReportsById ?? {}))
+      .map((item) => withAdvisorContext(item)),
   );
 
   const notebookTodoItems = computed(() =>
-    sortReportsByDate(Object.values(ui.planner.followUpReportsById ?? {})),
+    sortReportsByDate(Object.values(ui.planner.followUpReportsById ?? {}))
+      .map((item) => withAdvisorContext(item)),
   );
 
   const orderBrief = computed(() => {
@@ -3418,6 +3538,9 @@ function effectiveMass(ships, cargoSalt, metals) {
       title: "Build the next edge deliberately",
       summary: "Use reconnaissance, trade, and the frontier to create the next decision before a rival creates one for you.",
       source: "General command guidance",
+      advisorId: "steward",
+      advisorName: advisorProfile("steward").advisorName,
+      advisorRole: advisorProfile("steward").role,
     };
 
     if (expandTarget) {
@@ -3435,6 +3558,9 @@ function effectiveMass(ships, cargoSalt, metals) {
             ? `${expandTarget.detail} We already have the local picture, so timing now matters more than certainty.`
             : `${expandTarget.detail} A probe there would collapse uncertainty before the claim or convoy commits.`,
         source: "Strategy board",
+        advisorId: expandTarget.value === "explore" ? "spymaster" : "steward",
+        advisorName: advisorProfile(expandTarget.value === "explore" ? "spymaster" : "steward").advisorName,
+        advisorRole: advisorProfile(expandTarget.value === "explore" ? "spymaster" : "steward").role,
       };
     } else if (actionableProbeDepot) {
       opportunity = {
@@ -3444,6 +3570,9 @@ function effectiveMass(ships, cargoSalt, metals) {
         title: `${actionableProbeDepot.systemName} can widen the picture today`,
         summary: `${actionableProbeDepot.readyProbes} ready probes and ${formatNumber(actionableProbeDepot.saltStockpile)} salt are waiting there. Turn spare stores into warning time.`,
         source: "Probe net",
+        advisorId: "spymaster",
+        advisorName: advisorProfile("spymaster").advisorName,
+        advisorRole: advisorProfile("spymaster").role,
       };
     }
 
@@ -3454,6 +3583,9 @@ function effectiveMass(ships, cargoSalt, metals) {
       title: "The board is quiet, but not safe",
       summary: "Use the diplomacy table and probe coverage to decide where silence is genuine and where it hides a commitment in transit.",
       source: "Situation estimate",
+      advisorId: "envoy",
+      advisorName: advisorProfile("envoy").advisorName,
+      advisorRole: advisorProfile("envoy").role,
     };
 
     if (threatTarget) {
@@ -3464,6 +3596,9 @@ function effectiveMass(ships, cargoSalt, metals) {
         title: `${threatTarget.systemName} is the pressure point`,
         summary: `${threatTarget.detail} If we strip the wrong reserve, this is where a pin, blockade, or surprise arrival will punish us.`,
         source: "Strategy board",
+        advisorId: "marshal",
+        advisorName: advisorProfile("marshal").advisorName,
+        advisorRole: advisorProfile("marshal").role,
       };
     } else if (strongestThreat) {
       threat = {
@@ -3473,6 +3608,9 @@ function effectiveMass(ships, cargoSalt, metals) {
         title: `${strongestThreat.factionName} is setting the current risk`,
         summary: `${strongestThreat.stanceSummary} ${strongestThreat.latestSignalText}`,
         source: "Diplomacy board",
+        advisorId: "envoy",
+        advisorName: advisorProfile("envoy").advisorName,
+        advisorRole: advisorProfile("envoy").role,
       };
     } else if (screenTarget) {
       threat = {
@@ -3482,6 +3620,9 @@ function effectiveMass(ships, cargoSalt, metals) {
         title: `${screenTarget.systemName} could blindside the lane`,
         summary: `${screenTarget.detail} If that screen point goes unwatched, we give away reaction time for free.`,
         source: "Strategy board",
+        advisorId: "marshal",
+        advisorName: advisorProfile("marshal").advisorName,
+        advisorRole: advisorProfile("marshal").role,
       };
     }
 
@@ -3492,9 +3633,13 @@ function effectiveMass(ships, cargoSalt, metals) {
       title: "Interpretation wins more than volume",
       summary: "The point of the daily queue is not to read everything. It is to notice which piece of information changes the plan.",
       source: "Command doctrine",
+      advisorId: "envoy",
+      advisorName: advisorProfile("envoy").advisorName,
+      advisorRole: advisorProfile("envoy").role,
     };
 
     if (lessonSource) {
+      const lessonAdvisor = advisorProfileForReport(lessonSource);
       lesson = {
         key: "lesson",
         label: "Lesson",
@@ -3502,6 +3647,9 @@ function effectiveMass(ships, cargoSalt, metals) {
         title: `Lesson from ${lessonSource.kicker.toLowerCase()}`,
         summary: lessonSource.analysis,
         source: lessonSource.title,
+        advisorId: lessonAdvisor.advisorId,
+        advisorName: lessonAdvisor.advisorName,
+        advisorRole: lessonAdvisor.role,
       };
     } else if (advisorBriefs.value.length > 0) {
       const advisor = advisorBriefs.value[0];
@@ -3512,6 +3660,9 @@ function effectiveMass(ships, cargoSalt, metals) {
         title: `${advisor.advisorName} is teaching a bias`,
         summary: advisor.reasoning,
         source: advisor.role,
+        advisorId: advisor.advisorId,
+        advisorName: advisor.advisorName,
+        advisorRole: advisor.role,
       };
     }
 

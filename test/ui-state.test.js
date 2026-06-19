@@ -89,6 +89,7 @@ test("ui state loads scenario through worker and exposes player-facing reports",
   assert.equal(store.selectedSystemOverview.value?.homeLabel, "Your home system");
   assert.equal(store.summaryCards.value.some((card) => card.label === "Ships"), true);
   assert.equal(store.feedItems.value.some((item) => item.title.includes("Crimson Wake launched an estimated 6 ships toward Barnard's Star")), true);
+  assert.equal(store.feedItems.value.some((item) => item.advisorName && item.advisorRole && item.analysis.length > 0), true);
   assert.equal(store.starlaneSegments.value.length > 0, true);
 });
 
@@ -139,7 +140,10 @@ test("ui state tracks workspace navigation and returns to map for command drafti
   await store.loadInitialData();
   await nextTick();
 
-  assert.equal(store.ui.activeWorkspace, "map");
+  assert.equal(store.ui.activeWorkspace, "reports");
+  assert.equal(store.WORKSPACE_VIEWS[0].key, "reports");
+  assert.equal(store.WORKSPACE_VIEWS[0].label, "Advisors");
+  assert.equal(store.WORKSPACE_VIEWS[1].key, "map");
 
   store.setActiveWorkspace("reports");
   await nextTick();
@@ -855,5 +859,6 @@ test("ui state frames the day as opportunity, threat, and lesson", async () => {
   ]);
   assert.match(store.dailyBrief.value?.items[0]?.title ?? "", /Barnard's Star/u);
   assert.match(store.dailyBrief.value?.items[1]?.title ?? "", /Tau Ceti/u);
+  assert.equal(store.dailyBrief.value?.items.every((item) => item.advisorName && item.advisorRole), true);
   assert.equal((store.dailyBrief.value?.items[2]?.summary ?? "").length > 0, true);
 });

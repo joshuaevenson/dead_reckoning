@@ -1973,3 +1973,306 @@ It is especially valuable because it lets the player:
 * learn early systems in a controlled environment
 * remain part of the living galaxy the entire time
 * choose when to invite greater danger in exchange for greater opportunity
+
+## Future LLM Ideas
+
+LLMs could make the game feel much more personal and alive, but they should usually sit on top of deterministic simulation rather than replace it. The model should add identity, interpretation, and believable behavior while staying grounded in actual world state, player knowledge, and explicit faction goals.
+
+### Top Priority Directions
+
+The most promising near- to mid-term LLM directions appear to be:
+
+* empire DNA and faction identity generation
+* advisor-mediated natural-language orders
+* internal politics inside the player's empire
+* NPC belief models rather than omniscient AI behavior
+* intelligence and counterintelligence with manageable scope
+* personalized reports, recaps, memory, and world-building
+
+### Empire DNA And Faction Identity
+
+Empire identity should be an onboarding conversation, not a single text box.
+
+One useful flow is:
+
+* prompt the player with starting identity frames such as `House`, `Corporation`, `Republic`, `Cult`, `Dynasty`, or `League`
+* let the player talk with an AI until the identity feels right
+* compile that conversation into a structured faction profile that drives the rest of the experience
+
+The structured profile could include:
+
+* government form
+* core values
+* taboos
+* public tone
+* elite tone
+* military style
+* economic ethos
+* naming patterns
+* symbols
+* founding myth
+
+That profile can then drive:
+
+* faction names
+* ship classes
+* probe names
+* ceremonial language
+* diplomatic phrasing
+* propaganda style
+* advisor voice
+* recap tone
+* historical mythmaking
+
+### Doctrines As Soft Pressure
+
+Doctrine should create coherence and pressure, but not hard restrictions.
+
+The AI can help propose or refine doctrines such as:
+
+* never cede the frontier
+* protect trade before honor
+* avoid open war without intelligence superiority
+* punish betrayal decisively
+
+These doctrines should:
+
+* influence how advisors frame choices
+* shape praise, warnings, and criticism
+* give the empire a recognizable worldview
+* never block the player from choosing a different course
+
+### Advisor-Mediated Orders
+
+The advisor panel should support natural-language intent as a complement to the manual UI.
+
+For example, the player could type:
+
+```text
+I want to scout the Povonis system.
+```
+
+The advisors should respond with:
+
+* what they think the player means
+* one or more concrete plans
+* the risks and tradeoffs of each plan
+* a structured action package the player can approve
+
+This could reduce UI pressure without removing player control. The manual interface should remain available and canonical, while the LLM layer helps translate player intent into explicit game actions.
+
+Important guardrails:
+
+* freeform text should never execute directly without plan review
+* plans should expose key assumptions
+* the player should be able to approve, reject, or edit a plan before it becomes orders
+
+### Internal Politics
+
+Internal politics is one of the strongest ways to make the player's empire feel inhabited rather than abstract.
+
+A manageable first version would introduce a small set of recurring internal blocs such as:
+
+* military hawks
+* trade guilds
+* frontier governors
+* intelligence bureau
+* state cult or civic ideology
+
+Each bloc should have:
+
+* concrete material interests
+* a distinct tone
+* a recognizable theory of how the empire survives and wins
+
+This gives advisors a reason to disagree in ways the player can learn and predict. The result should feel like governing a coalition of actors, not just receiving generic hints from a neutral helper.
+
+### NPC Belief Models
+
+NPCs should not merely be stronger optimizers. They should act on beliefs shaped by delayed reports, missing information, prejudice, doctrine, and recent shocks.
+
+Key principles:
+
+* NPCs should make decisions based on what they think is true, not perfect world truth
+* their personalities should influence how they interpret uncertainty
+* outsiders should infer those tendencies through observation rather than reading explicit labels
+
+This helps the world feel more realistic and gives players the chance to learn an opponent's habits over time.
+
+### Intelligence And Counterintelligence
+
+This is especially promising, but it should begin with a tightly scoped ruleset.
+
+A manageable starting set of deception actions could be:
+
+* conceal intent
+* plant rumor
+* forge or distort message
+* stage misleading fleet posture
+* leak selected truth
+
+The deterministic layer should decide:
+
+* what information exists
+* which messages are true, false, or mixed
+* who receives them
+* how confident recipients should be
+
+The LLM layer should help with:
+
+* writing the message itself
+* expressing suspicion or confidence in reports
+* generating rival interpretations when evidence is incomplete
+
+This preserves clarity while still making intelligence warfare feel authored and alive.
+
+### Personalized Reports And World Memory
+
+Some of the highest-value uses of LLMs may simply be in how the world is narrated back to the player.
+
+Strong opportunities include:
+
+* intelligence briefings that explain what changed and why it matters
+* multiple reporting styles such as military, political, logistics, or narrative chronicle
+* "what happened while you were away?" recaps for asynchronous play
+* after-action summaries that connect outcomes to causes
+* historical memory that remembers betrayals, famous defenses, humiliating retreats, and decisive discoveries
+* emergent admirals, governors, scouts, and envoys whose reputations come from actual events
+* faction-specific diplomatic messages, propaganda, memorials, and intercepted chatter
+* mythmaking that gradually turns a save file into a lived imperial history
+
+### Lower-Priority Or More Complex Ideas
+
+Some ideas are compelling but likely belong later:
+
+* cultural drift across frontier systems
+* more complex internal social simulation
+* broader generative world texture beyond what players can meaningfully notice
+
+These may become valuable once the core identity, advisor, politics, and intelligence systems are working.
+
+### Realism Guardrails
+
+* LLM output should never invent hidden world facts; it should only speak from actual state, delivered reports, or clearly marked inference.
+* Strategic decisions and outcomes should still resolve through explicit game rules so players can learn, predict, and outplay the system rather than feeling like results are arbitrary.
+* The most effective architecture is likely layered: deterministic simulation for truth, small models for advisor interaction and NPC intent, and stronger models only where higher-quality writing materially improves the player experience.
+
+## TODO
+
+This section is meant to capture open implementation work so future coding agents can pick up where design discussion left off. Assume these items are still open even if parts of the system already resemble them.
+
+### Current Advisor Baseline
+
+These pieces are now implemented in the local command table and should be treated as the starting point rather than aspirational design only:
+
+* the default landing page is now the `Advisors` pane rather than the galactic map
+* the daily loop is framed as one opportunity, one threat, and one lesson
+* the daily brief is surfaced as a distinct morning council brief
+* the live signal queue is now presented as advisor interpretations rather than raw generic feed items
+* report items carry named advisor attribution and consequence-oriented analysis
+* the notebook includes a strategy board and council readout
+* the player can mark systems with strategic intent such as `explore`, `expand`, `threat`, `screen`, `economic_priority`, and `future_link`
+* advisor suggestions already react to those strategic markings
+* reports can be triaged into archive and notebook follow-up queues
+
+### Near-Term Advisor And Opening TODO
+
+These are the remaining pieces most directly adjacent to the current implementation and should likely be tackled before broader LLM or political systems:
+
+* add first-class diplomatic pigeons to the advisor pane instead of only implying diplomatic pressure through stance summaries
+* generate distinct faction voices for pigeons such as threatening, conciliatory, opportunistic, or deceptive messages
+* let advisors disagree explicitly about how to interpret the same pigeon or report
+* make more consequence explanations cite concrete causes such as a pinned fleet, a blockade on a specific lane, a late probe, or a stripped reserve
+* connect strategic markings more deeply into reports so advisors can say things like "your marked threat world just received reinforcements"
+* add stronger after-action explanation flows for battles, lost control, failed expansion, and successful screening
+* build the early-game frontier pocket/apprenticeship setup where the player begins in a partially isolated AI neighborhood
+* implement the home-system salt ramp and outward starlane progression that eventually links the local pocket to the wider galaxy
+* ensure the single-player or AI-heavy opening reliably produces at least one opportunity, one threat, and one lesson each day
+* decide whether advisor reliability should become an explicit mechanic now or stay implicit until more advisor disagreement exists
+
+### Core Product Decisions
+
+* define the first playable scope for LLM-driven features and decide what belongs in phase 1 versus later phases
+* define which model tiers are needed for which jobs such as advisor interaction, summarization, NPC intent generation, and high-quality narrative writing
+* define a hard contract between deterministic simulation truth and generated interpretation so all AI features stay grounded
+* define what data each AI-facing subsystem is allowed to see, especially for player knowledge versus hidden world truth
+
+### Empire DNA Onboarding
+
+* design a conversational empire-creation flow that starts from frames like `House`, `Corporation`, `Republic`, `Cult`, `Dynasty`, or `League`
+* define the structured faction profile produced by that conversation
+* decide which parts of the profile are player-editable after creation and which are historical record
+* generate naming, tone, ceremony, slogans, and mythic language from the structured profile
+* persist the faction profile in a format that can be reused by advisors, reports, diplomacy, and recap systems
+
+### Doctrine System
+
+* define how doctrines are proposed, accepted, revised, or ignored by the player
+* define how doctrines influence advisor tone and recommendations without creating hard gameplay locks
+* decide whether doctrines are explicit player choices, AI-suggested defaults, or both
+* define how NPC doctrines are represented internally and how players might infer them from behavior
+
+### Advisor-Mediated Orders
+
+* add an advisor input box where the player can express intent in natural language
+* define the pipeline that turns player intent into one or more structured candidate plans
+* define the approval UX so no freeform request executes without review
+* expose assumptions, risks, and tradeoffs for each candidate plan before approval
+* allow the player to edit, reject, or manually recreate a suggested plan in the canonical UI
+* define how advisors explain ambiguity when the player's request is underspecified
+* create example intents such as scouting a system, reinforcing a frontier, launching a probe, fortifying a world, or preparing a diplomatic message
+
+### Internal Politics
+
+* define the first set of internal political blocs such as military hawks, trade guilds, frontier governors, intelligence bureau, and state cult or civic ideology
+* define what each bloc cares about materially and ideologically
+* define how those blocs surface through specific advisors, reports, and disagreements
+* define whether bloc influence changes over time based on victories, losses, expansion, shortages, or scandals
+* create a first-pass system for advisor disagreement so the player feels like they are governing competing interests rather than receiving generic helper text
+
+### NPC Belief Models
+
+* define the hidden belief state each NPC maintains about rival strength, intent, territory, logistics, and credibility
+* define how delayed reports, rumors, doctrine, and personality update those beliefs
+* define compact personality dimensions for rulers such as caution, pride, paranoia, opportunism, and revenge
+* ensure NPCs act on believed world state rather than perfect truth
+* define how players can infer NPC tendencies indirectly through actions, timing, and diplomatic language
+
+### Intelligence And Counterintelligence
+
+* define the first small set of deception and intelligence actions such as conceal intent, plant rumor, forge message, stage posture, and leak selected truth
+* define what makes a deception attempt plausible, what evidence it leaves behind, and how confidence is represented
+* define who receives deceptive information and how it propagates through reports and diplomacy
+* define how player-facing reports communicate uncertainty without becoming vague or useless
+* build example intelligence scenarios that test misinformation, partial truth, and conflicting interpretations
+
+### Reports, Recaps, And Memory
+
+* design report-generation prompts or templates for military, political, logistics, and narrative briefing styles
+* create a "what happened while you were away?" recap flow for asynchronous return sessions
+* define after-action summary generation that explains outcomes in terms of real causes from simulation history
+* define how world memory stores betrayals, famous defenses, humiliating retreats, decisive discoveries, and named characters
+* generate persistent mythic or historical language that reflects each empire's DNA and remembered events
+
+### Emergent Characters And Diplomacy
+
+* define how admirals, governors, scouts, envoys, or intelligence chiefs emerge from actual game events
+* define what character traits and reputations are worth persisting
+* create diplomatic message generation that reflects faction identity, current leverage, and remembered history
+* create propaganda, memorial, and intercepted-message writing flows grounded in real events
+
+### UI, Safety, And Validation
+
+* define the validation layer for all AI-generated plans and messages before they affect gameplay state
+* define fallback behavior when the AI is uncertain, unavailable, or produces an invalid plan
+* ensure every AI-generated action can be inspected in structured form by the player
+* define logging and debugging tools so future developers can inspect prompts, inputs, outputs, and validation failures
+* define test fixtures and replay scenarios for advisor plans, recap generation, doctrine tone, and NPC belief updates
+
+### Open Questions
+
+* should advisors primarily feel like interface helpers, political actors inside the empire, or a hybrid of both
+* how much of internal politics should be simulation versus presentation in the first implementation
+* how visible should doctrine be to the player and how hidden should doctrine remain for NPCs
+* how much ambiguity in intelligence reports is fun before it becomes frustrating
+* when should the game use a small fast model versus a stronger slower model
