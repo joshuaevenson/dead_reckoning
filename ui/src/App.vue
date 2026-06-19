@@ -29,6 +29,8 @@ const {
   shipOperationRows,
   shipOperationSummary,
   shipOperationOriginRows,
+  diplomacyRows,
+  diplomacySummary,
   mapLayout,
   mapCanvas,
   fleetMarkers,
@@ -723,6 +725,119 @@ onMounted(async () => {
                 </div>
                 <div v-if="shipOperationOriginRows.length === 0" class="planning-empty probes-empty">
                   No active launch systems yet.
+                </div>
+              </div>
+            </section>
+          </aside>
+        </section>
+
+        <section v-else-if="ui.activeWorkspace === 'diplomacy'" class="workspace-page workspace-diplomacy-page">
+          <section class="feed-panel operations-main-panel">
+            <div class="feed-header">
+              <div>
+                <div class="panel-kicker">Political Picture</div>
+                <div class="panel-title">Diplomacy Board</div>
+              </div>
+              <Tag severity="info" rounded>{{ diplomacySummary.total }} known kingdoms</Tag>
+            </div>
+
+            <div class="probe-operations-scroll">
+              <article
+                v-for="item in diplomacyRows"
+                :key="item.factionId"
+                :class="['feed-card probe-feed-card', `feed-tone-${item.stanceSeverity}`]"
+              >
+                <div class="feed-card-top">
+                  <div class="feed-kicker">Observed Stance</div>
+                  <Tag :severity="item.stanceSeverity" rounded>{{ item.stanceLabel }}</Tag>
+                </div>
+                <div class="feed-title">{{ item.factionName }}</div>
+                <p class="feed-copy">{{ item.stanceSummary }}</p>
+                <p class="feed-impact"><span>Home:</span> {{ item.homeSystemName }}</p>
+                <p class="feed-impact"><span>Strength:</span> {{ item.strengthText }}</p>
+                <p class="feed-impact"><span>Pressure:</span> {{ item.pressureText }}</p>
+                <p class="feed-impact">
+                  <span>Latest signal:</span>
+                  {{ item.latestSignalText }}
+                  <template v-if="item.latestSignalDate">({{ item.latestSignalDate }})</template>
+                </p>
+                <div class="probe-feed-actions">
+                  <Button
+                    label="Open Home On Map"
+                    icon="pi pi-globe"
+                    severity="secondary"
+                    outlined
+                    @click="openSystemOnMap(item.homeSystemId)"
+                  />
+                </div>
+              </article>
+
+              <div v-if="diplomacyRows.length === 0" class="planning-empty probes-empty">
+                No rival kingdoms are visible from this seat yet.
+              </div>
+            </div>
+          </section>
+
+          <aside class="probes-sidebar diplomacy-sidebar">
+            <section class="reports-side-panel diplomacy-summary-panel">
+              <div class="planning-header">
+                <div>
+                  <div class="panel-kicker">Reading Guide</div>
+                  <div class="panel-title">Observed Relations</div>
+                </div>
+              </div>
+
+              <p class="diplomacy-note">
+                These standings are inferred from current territory, fleet motion, and recent reports. They are not formal treaties.
+              </p>
+
+              <div class="diplomacy-summary-grid">
+                <div class="diplomacy-summary-card danger">
+                  <strong>Hostile</strong>
+                  <span>{{ diplomacySummary.hostile }} kingdoms</span>
+                </div>
+                <div class="diplomacy-summary-card warn">
+                  <strong>Tense</strong>
+                  <span>{{ diplomacySummary.tense }} kingdoms</span>
+                </div>
+                <div class="diplomacy-summary-card info">
+                  <strong>Watchful</strong>
+                  <span>{{ diplomacySummary.watchful }} kingdoms</span>
+                </div>
+                <div class="diplomacy-summary-card secondary">
+                  <strong>Distant</strong>
+                  <span>{{ diplomacySummary.distant }} kingdoms</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="reports-side-panel diplomacy-summary-panel">
+              <div class="planning-header">
+                <div>
+                  <div class="panel-kicker">Priority Watch</div>
+                  <div class="panel-title">Closest Pressures</div>
+                </div>
+              </div>
+
+              <div class="operations-origin-list">
+                <div
+                  v-for="row in diplomacyRows.slice(0, 5)"
+                  :key="`${row.factionId}-watch`"
+                  class="probe-depot-card"
+                >
+                  <div class="probe-depot-top">
+                    <strong>{{ row.factionName }}</strong>
+                    <Tag :severity="row.stanceSeverity" rounded>{{ row.stanceLabel }}</Tag>
+                  </div>
+                  <div class="probe-depot-meta">{{ row.pressureText }}</div>
+                  <div class="probe-depot-meta">{{ row.strengthText }}</div>
+                  <Button
+                    label="Open Home On Map"
+                    icon="pi pi-globe"
+                    severity="secondary"
+                    outlined
+                    @click="openSystemOnMap(row.homeSystemId)"
+                  />
                 </div>
               </div>
             </section>

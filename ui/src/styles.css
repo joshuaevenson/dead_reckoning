@@ -197,6 +197,7 @@ body {
 
 .workspace-probes-page,
 .workspace-operations-page,
+.workspace-diplomacy-page,
 .workspace-reports-page {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
@@ -1206,19 +1207,25 @@ body {
 }
 
 .operations-summary-panel,
-.operations-origin-panel {
+.operations-origin-panel,
+.diplomacy-summary-panel {
   display: grid;
   gap: 10px;
 }
 
 .operations-summary-grid,
-.operations-origin-list {
+.operations-origin-list,
+.diplomacy-summary-grid {
   min-height: 0;
   display: grid;
   gap: 8px;
 }
 
 .operations-summary-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.diplomacy-summary-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -1239,6 +1246,42 @@ body {
 .operations-summary-card span {
   color: var(--muted);
   line-height: 1.35;
+}
+
+.diplomacy-note {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.diplomacy-summary-card {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(120, 180, 255, 0.08);
+  background: rgba(4, 11, 18, 0.66);
+}
+
+.diplomacy-summary-card span {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.diplomacy-summary-card.danger {
+  border-color: rgba(255, 114, 114, 0.26);
+}
+
+.diplomacy-summary-card.warn {
+  border-color: rgba(255, 196, 95, 0.26);
+}
+
+.diplomacy-summary-card.info {
+  border-color: rgba(111, 213, 255, 0.26);
+}
+
+.diplomacy-summary-card.secondary {
+  border-color: rgba(180, 196, 215, 0.18);
 }
 
 .brief-title {
@@ -1373,6 +1416,7 @@ body {
 
   .workspace-probes-page,
   .workspace-operations-page,
+  .workspace-diplomacy-page,
   .workspace-reports-page,
   .map-main-layout {
     grid-template-columns: minmax(0, 1fr) 320px;
@@ -1396,7 +1440,7 @@ body {
   }
 
   .workspace-rail-top {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(7, minmax(0, 1fr));
     align-content: stretch;
   }
 
@@ -1407,6 +1451,7 @@ body {
   .workspace-map-page,
   .workspace-probes-page,
   .workspace-operations-page,
+  .workspace-diplomacy-page,
   .workspace-reports-page {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(0, 1fr);
@@ -1420,6 +1465,7 @@ body {
   .notebook-layout,
   .form-grid,
   .operations-summary-grid,
+  .diplomacy-summary-grid,
   .system-facts,
   .orders-layout,
   .shipyard-line-fields,

@@ -149,6 +149,10 @@ test("ui state tracks workspace navigation and returns to map for command drafti
   await nextTick();
   assert.equal(store.ui.activeWorkspace, "probes");
 
+  store.setActiveWorkspace("diplomacy");
+  await nextTick();
+  assert.equal(store.ui.activeWorkspace, "diplomacy");
+
   store.setActiveWorkspace("notebook");
   await nextTick();
   assert.equal(store.ui.activeWorkspace, "notebook");
@@ -243,6 +247,108 @@ test("ui state can triage reports into archive and notebook follow-up, and resto
 
   assert.equal(reloadedStore.notebookTodoItems.value.some((item) => item.id === followUpItem.id), false);
   assert.equal(reloadedStore.feedItems.value.some((item) => item.id === followUpItem.id), true);
+});
+
+test("ui state exposes a diplomacy board with inferred rival stances", async () => {
+  const scenario = {
+    name: "diplomacy_board",
+    seed: 9,
+    startDate: "2240-01-01",
+    durationDays: 2,
+    factions: [
+      { id: "blue", name: "Aster Crown", homeSystemId: "blue_home" },
+      { id: "red", name: "Crimson Wake", homeSystemId: "red_home" },
+      { id: "green", name: "Verdant League", homeSystemId: "green_home" },
+    ],
+    systems: [
+      {
+        id: "blue_home",
+        name: "Sol",
+        position: { x: 0, y: 0 },
+        starType: "yellow_star",
+        metalRichness: "standard",
+        ownerId: "blue",
+        saltStockpile: 25,
+        metalStockpile: 18,
+        probeStockpile: 1,
+        infrastructure: 4,
+        defense: 2,
+        controlAgeDays: 100,
+        garrisonShips: { blue: 5 },
+      },
+      {
+        id: "red_home",
+        name: "Tau Ceti",
+        position: { x: 3, y: 0 },
+        starType: "yellow_star",
+        metalRichness: "standard",
+        ownerId: "red",
+        saltStockpile: 100,
+        metalStockpile: 20,
+        probeStockpile: 0,
+        infrastructure: 4,
+        defense: 2,
+        controlAgeDays: 100,
+        garrisonShips: { red: 7 },
+      },
+      {
+        id: "green_home",
+        name: "Epsilon Eridani",
+        position: { x: 14, y: 0 },
+        starType: "yellow_star",
+        metalRichness: "standard",
+        ownerId: "green",
+        saltStockpile: 55,
+        metalStockpile: 22,
+        probeStockpile: 0,
+        infrastructure: 4,
+        defense: 2,
+        controlAgeDays: 100,
+        garrisonShips: { green: 6 },
+      },
+    ],
+    routes: [
+      {
+        id: "blue-red",
+        a: "blue_home",
+        b: "red_home",
+        distance: 3,
+        travelDays: 3,
+        headingFromA: "red",
+        headingFromB: "blue",
+      },
+    ],
+    commands: [
+      {
+        type: "launch_fleet",
+        at: "2240-01-01",
+        factionId: "red",
+        originSystemId: "red_home",
+        destinationSystemId: "blue_home",
+        ships: 4,
+        mission: "attack",
+      },
+    ],
+  };
+
+  const store = createCommandState({
+    fetchImpl: createScenarioFetch({ diplomacy_board: scenario }),
+    locationSearch: "?scenario=diplomacy_board&seat=blue",
+  });
+
+  await store.loadInitialData();
+  await nextTick();
+
+  assert.equal(store.WORKSPACE_VIEWS.some((view) => view.key === "diplomacy"), true);
+  assert.equal(store.diplomacyRows.value.length, 2);
+  assert.equal(store.diplomacySummary.value.hostile, 1);
+
+  const hostileRow = store.diplomacyRows.value.find((row) => row.factionId === "red");
+  const distantRow = store.diplomacyRows.value.find((row) => row.factionId === "green");
+
+  assert.equal(hostileRow?.stanceLabel, "Hostile");
+  assert.match(hostileRow?.latestSignalText ?? "", /launched ships toward Sol/u);
+  assert.equal(distantRow?.stanceLabel, "Distant");
 });
 
 test("ui state allows direct probe travel to distant systems without route gating", async () => {

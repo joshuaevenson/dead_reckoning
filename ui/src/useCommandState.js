@@ -36,6 +36,7 @@ const WORKSPACE_VIEWS = [
   { key: "map", label: "Map", icon: "pi pi-globe" },
   { key: "probes", label: "Probes", icon: "pi pi-search" },
   { key: "operations", label: "Ship Ops", icon: "pi pi-send" },
+  { key: "diplomacy", label: "Diplomacy", icon: "pi pi-users" },
   { key: "reports", label: "Reports", icon: "pi pi-megaphone" },
   { key: "production", label: "Production", icon: "pi pi-sliders-h" },
   { key: "notebook", label: "Notebook", icon: "pi pi-book" },
@@ -87,6 +88,10 @@ function titleCase(value) {
   return String(value)
     .replaceAll("_", " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function formatCountLabel(value, singular, plural = `${singular}s`) {
+  return `${formatNumber(value)} ${value === 1 ? singular : plural}`;
 }
 
 function formatTravelSpan(days) {
@@ -2839,6 +2844,268 @@ function effectiveMass(ships, cargoSalt, metals) {
     );
   });
 
+  const diplomacyRows = computed(() => {
+    if (!currentSeat.value || !world.scenario || !latestSnapshot.value) {
+      return [];
+    }
+
+    const seatFactionId = currentSeat.value.faction.id;
+    const seatOwnedSystemIds = new Set(ownedSystems.value.map((system) => system.id));
+    const recentSignalsByFaction = new Map();
+
+    const noteSignal = (factionId, kind, date, summary) => {
+      if (!factionId || factionId === seatFactionId) {
+        return;
+      }
+
+      const current = recentSignalsByFaction.get(factionId) ?? {
+        hostileSignals: 0,
+        battleSignals: 0,
+        expansionSignals: 0,
+        latestDate: "",
+        latestSummary: "",
+      };
+
+      if (kind === "hostile") {
+        current.hostileSignals += 1;
+      } else if (kind === "battle") {
+        current.battleSignals += 1;
+      } else if (kind === "expansion") {
+        current.expansionSignals += 1;
+      }
+
+      if (date >= current.latestDate) {
+        current.latestDate = date;
+        current.latestSummary = summary;
+      }
+
+      recentSignalsByFaction.set(factionId, current);
+    };
+
+    for (const line of world.result?.log ?? []) {
+      const parsed = parseLogEntry(line);
+      if (!parsed) {
+        continue;
+      }
+
+      const launchMatch = parsed.detail.match(/^(\w+) launched (\S+) from (\S+) to (\S+)$/u);
+      if (launchMatch) {
+        const [, factionId, , , destinationSystemId] = launchMatch;
+        if (seatOwnedSystemIds.has(destinationSystemId)) {
+          noteSignal(
+            factionId,
+            "hostile",
+            parsed.date,
+            `${translateFactionId(factionId)} launched ships toward ${translateSystemId(destinationSystemId)}.`,
+          );
+        }
+        continue;
+      }
+
+      const combatMatch = parsed.detail.match(/^combat at (\S+); attacker (\w+) lost (\d+), defender (\w+) lost (\d+)$/u);
+      if (combatMatch) {
+        const [, systemId, attackerFactionId, , defenderFactionId] = combatMatch;
+        if (attackerFactionId === seatFactionId && defenderFactionId !== seatFactionId) {
+          noteSignal(
+            defenderFactionId,
+            "battle",
+            parsed.date,
+            `Recent fighting with ${translateFactionId(defenderFactionId)} at ${translateSystemId(systemId)}.`,
+          );
+        } else if (defenderFactionId === seatFactionId && attackerFactionId !== seatFactionId) {
+          noteSignal(
+            attackerFactionId,
+            "battle",
+            parsed.date,
+            `Recent fighting with ${translateFactionId(attackerFactionId)} at ${translateSystemId(systemId)}.`,
+          );
+        }
+        continue;
+      }
+
+      const captureMatch = parsed.detail.match(/^(\w+) captured (\S+)$/u);
+      if (captureMatch) {
+        const [, factionId, systemId] = captureMatch;
+        if (seatOwnedSystemIds.has(systemId) || systemId === currentSeat.value.faction.homeSystemId) {
+          noteSignal(
+            factionId,
+            "hostile",
+            parsed.date,
+            `${translateFactionId(factionId)} captured ${translateSystemId(systemId)}.`,
+          );
+        }
+        continue;
+      }
+
+      const claimMatch = parsed.detail.match(/^(\w+) claimed open system (\S+)$/u);
+      if (claimMatch) {
+        const [, factionId, systemId] = claimMatch;
+        noteSignal(
+          factionId,
+          "expansion",
+          parsed.date,
+          `${translateFactionId(factionId)} expanded into ${translateSystemId(systemId)}.`,
+        );
+      }
+    }
+
+    const ownedSystemsByFactionId = new Map();
+    for (const system of world.scenario.systems) {
+      const ownerId = snapshotSystem(system.id)?.ownerId;
+      if (!ownerId) {
+        continue;
+      }
+      const current = ownedSystemsByFactionId.get(ownerId) ?? [];
+      current.push(system);
+      ownedSystemsByFactionId.set(ownerId, current);
+    }
+
+    const stanceRank = {
+      hostile: 0,
+      tense: 1,
+      watchful: 2,
+      distant: 3,
+    };
+
+    return world.scenario.factions
+      .filter((faction) => faction.id !== seatFactionId)
+      .map((faction) => {
+        const factionSnapshot = latestSnapshot.value?.factions?.[faction.id];
+        const factionOwnedSystems = ownedSystemsByFactionId.get(faction.id) ?? [];
+        const factionOwnedIds = new Set(factionOwnedSystems.map((system) => system.id));
+        const hostileInbound = fleetEntries.value.filter((fleet) =>
+          fleet.factionId === faction.id
+          && fleet.status === "transit"
+          && seatOwnedSystemIds.has(fleet.destinationSystemId),
+        ).length;
+        const activeTransit = fleetEntries.value.filter((fleet) =>
+          fleet.factionId === faction.id
+          && fleet.status === "transit",
+        ).length;
+        const frontierSystems = factionOwnedSystems.filter((system) =>
+          (system.starlaneLinks ?? []).some((neighborId) => seatOwnedSystemIds.has(neighborId)),
+        );
+        const hostileBlockades = fleetEntries.value.filter((fleet) => {
+          if (fleet.factionId !== faction.id || fleet.mission !== "blockade") {
+            return false;
+          }
+
+          const blockadeSystemId = fleet.currentSystemId ?? fleet.destinationSystemId ?? null;
+          if (!blockadeSystemId) {
+            return false;
+          }
+
+          if (seatOwnedSystemIds.has(blockadeSystemId)) {
+            return true;
+          }
+
+          return (systemsMap.value.get(blockadeSystemId)?.starlaneLinks ?? []).some((neighborId) =>
+            seatOwnedSystemIds.has(neighborId),
+          );
+        }).length;
+
+        let nearestApproachDays = null;
+        for (const enemySystem of factionOwnedSystems) {
+          for (const friendlySystem of ownedSystems.value) {
+            const plan = routePlan(enemySystem.id, friendlySystem.id);
+            if (!plan) {
+              continue;
+            }
+
+            if (nearestApproachDays === null || plan.travelDays < nearestApproachDays) {
+              nearestApproachDays = plan.travelDays;
+            }
+          }
+        }
+
+        const signals = recentSignalsByFaction.get(faction.id) ?? {
+          hostileSignals: 0,
+          battleSignals: 0,
+          expansionSignals: 0,
+          latestDate: "",
+          latestSummary: "",
+        };
+
+        let stanceKey = "distant";
+        let stanceLabel = "Distant";
+        let stanceSeverity = "info";
+        let stanceSummary = "No nearby pressure or direct incidents are visible from the current map and reports.";
+
+        if (hostileInbound > 0 || hostileBlockades > 0 || signals.hostileSignals > 0 || signals.battleSignals > 0) {
+          stanceKey = "hostile";
+          stanceLabel = "Hostile";
+          stanceSeverity = "danger";
+          if (hostileInbound > 0) {
+            stanceSummary = `${translateFactionId(faction.id)} already has ${formatCountLabel(hostileInbound, "fleet")} moving toward our holdings.`;
+          } else if (hostileBlockades > 0) {
+            stanceSummary = `${translateFactionId(faction.id)} is pressuring our frontier with ${formatCountLabel(hostileBlockades, "blockade position")}.`;
+          } else {
+            stanceSummary = `Recent battle reports indicate active hostilities with ${translateFactionId(faction.id)}.`;
+          }
+        } else if (frontierSystems.length > 0 || (nearestApproachDays !== null && nearestApproachDays <= 3)) {
+          stanceKey = "tense";
+          stanceLabel = "Tense";
+          stanceSeverity = "warn";
+          if (frontierSystems.length > 0) {
+            stanceSummary = `${translateFactionId(faction.id)} shares ${formatCountLabel(frontierSystems.length, "border system")} with our current holdings.`;
+          } else {
+            stanceSummary = `${translateFactionId(faction.id)} can reach our territory in about ${formatTravelSpan(nearestApproachDays)}.`;
+          }
+        } else if (nearestApproachDays !== null && nearestApproachDays <= 6) {
+          stanceKey = "watchful";
+          stanceLabel = "Watchful";
+          stanceSeverity = "secondary";
+          stanceSummary = `No direct attack is underway, but ${translateFactionId(faction.id)} sits within ${formatTravelSpan(nearestApproachDays)} of our frontier.`;
+        }
+
+        return {
+          factionId: faction.id,
+          factionName: faction.name,
+          homeSystemId: faction.homeSystemId,
+          homeSystemName: translateSystemId(faction.homeSystemId),
+          stanceKey,
+          stanceLabel,
+          stanceSeverity,
+          stanceSummary,
+          latestSignalDate: signals.latestDate,
+          latestSignalText: signals.latestSummary || "No direct diplomatic signal has reached the board yet.",
+          ownedSystems: factionSnapshot?.ownedSystems ?? factionOwnedSystems.length,
+          totalShips: factionSnapshot?.totalShips ?? 0,
+          totalSalt: factionSnapshot?.totalSaltStockpile ?? 0,
+          activeTransit,
+          hostileInbound,
+          hostileBlockades,
+          frontierCount: frontierSystems.length,
+          nearestApproachDays,
+          strengthText: `${formatCountLabel(factionSnapshot?.ownedSystems ?? factionOwnedSystems.length, "system")} · ${formatCountLabel(factionSnapshot?.totalShips ?? 0, "ship")}`,
+          pressureText:
+            hostileInbound > 0
+              ? `${formatCountLabel(hostileInbound, "fleet")} inbound · ${formatCountLabel(activeTransit, "fleet")} in transit total`
+              : hostileBlockades > 0
+                ? `${formatCountLabel(hostileBlockades, "blockade")} near our frontier · ${formatCountLabel(activeTransit, "fleet")} in transit total`
+                : nearestApproachDays !== null
+                  ? `Nearest approach ${formatTravelSpan(nearestApproachDays)} · ${formatCountLabel(activeTransit, "fleet")} in transit`
+                  : `${formatCountLabel(activeTransit, "fleet")} in transit`,
+        };
+      })
+      .sort((left, right) =>
+        stanceRank[left.stanceKey] - stanceRank[right.stanceKey]
+        || right.hostileInbound - left.hostileInbound
+        || right.frontierCount - left.frontierCount
+        || right.totalShips - left.totalShips
+        || left.factionName.localeCompare(right.factionName),
+      );
+  });
+
+  const diplomacySummary = computed(() => ({
+    total: diplomacyRows.value.length,
+    hostile: diplomacyRows.value.filter((row) => row.stanceKey === "hostile").length,
+    tense: diplomacyRows.value.filter((row) => row.stanceKey === "tense").length,
+    watchful: diplomacyRows.value.filter((row) => row.stanceKey === "watchful").length,
+    distant: diplomacyRows.value.filter((row) => row.stanceKey === "distant").length,
+    strongestThreat: diplomacyRows.value[0] ?? null,
+  }));
+
   function archiveReportItem(item) {
     if (!item?.id) {
       return;
@@ -2985,6 +3252,8 @@ function effectiveMass(ships, cargoSalt, metals) {
     shipOperationRows,
     shipOperationSummary,
     shipOperationOriginRows,
+    diplomacyRows,
+    diplomacySummary,
     originOptions,
     destinationOptions,
     anchorOptions,
