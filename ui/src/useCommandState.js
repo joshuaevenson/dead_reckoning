@@ -62,6 +62,47 @@ const PRODUCTION_POSTURE_OPTIONS = [
   { label: "Siege Prep", value: "siege" },
   { label: "Emergency", value: "emergency" },
 ];
+const STRATEGIC_MARKING_OPTIONS = [
+  {
+    label: "Explore",
+    value: "explore",
+    severity: "info",
+    summary: "Needs closer recon before we commit ships or trade.",
+  },
+  {
+    label: "Expand",
+    value: "expand",
+    severity: "success",
+    summary: "Candidate for near-term claim, reinforcement, or settlement.",
+  },
+  {
+    label: "Threat",
+    value: "threat",
+    severity: "danger",
+    summary: "Likely source of pressure, incursion, or surprise action.",
+  },
+  {
+    label: "Screen",
+    value: "screen",
+    severity: "warn",
+    summary: "Probe and blockade anchor where warning time matters.",
+  },
+  {
+    label: "Economic Priority",
+    value: "economic_priority",
+    severity: "secondary",
+    summary: "System we want to protect or exploit for long-run output.",
+  },
+  {
+    label: "Future Link",
+    value: "future_link",
+    severity: "contrast",
+    summary: "Candidate outward connection point for a later starlane push.",
+  },
+];
+const STRATEGIC_MARKINGS_BY_VALUE = new Map(
+  STRATEGIC_MARKING_OPTIONS.map((option) => [option.value, option]),
+);
 
 function defaultProductionLine(index) {
   return {
@@ -267,6 +308,10 @@ function findActionDefinition(actionKey) {
   return ORDER_ACTIONS.find((action) => action.key === actionKey) ?? null;
 }
 
+function strategicMarkingDefinition(value) {
+  return STRATEGIC_MARKINGS_BY_VALUE.get(value) ?? null;
+}
+
 function hasValidPosition(system) {
   return Number.isFinite(system?.position?.x) && Number.isFinite(system?.position?.y);
 }
@@ -390,6 +435,7 @@ export function createCommandState(options = {}) {
     planner: {
       speculation: "",
       productionBySystemId: {},
+      strategicMarkingsBySystemId: {},
       archivedReportsById: {},
       followUpReportsById: {},
     },
@@ -691,6 +737,115 @@ function effectiveMass(ships, cargoSalt, metals) {
       (system) => latestSnapshot.value?.systems?.[system.id]?.ownerId === currentSeat.value.faction.id,
     );
   });
+
+  function strategicMarkingRecord(systemId) {
+    if (!systemId) {
+      return null;
+    }
+
+    const record = ui.planner.strategicMarkingsBySystemId?.[systemId] ?? null;
+    if (!record?.value) {
+      return null;
+    }
+
+    const definition = strategicMarkingDefinition(record.value);
+    if (!definition) {
+      return null;
+    }
+
+    return {
+      systemId,
+      value: definition.value,
+      label: definition.label,
+      severity: definition.severity,
+      summary: definition.summary,
+      updatedAt: record.updatedAt ?? "",
+    };
+  }
+
+  const selectedSystemMarking = computed(() =>
+    strategicMarkingRecord(ui.selectedSystemId ?? null),
+  );
+
+  const strategicMarkingRows = computed(() => {
+    if (!world.scenario || !currentSeat.value) {
+      return [];
+    }
+
+    const homeSystemId = currentSeat.value.faction.homeSystemId;
+    return Object.entries(ui.planner.strategicMarkingsBySystemId ?? {})
+      .map(([systemId, record]) => {
+        const definition = strategicMarkingDefinition(record?.value);
+        const system = systemsMap.value.get(systemId);
+        const snapshot = snapshotSystem(systemId);
+        if (!definition || !system || !snapshot) {
+          return null;
+        }
+
+        const plan = routePlan(homeSystemId, systemId);
+        const yieldText = `${saltOutputForSystem(system)} salt + ${METAL_OUTPUT[system.metalRichness]} metal / year`;
+        const ownerText =
+          snapshot.ownerId === currentSeat.value.faction.id
+            ? "Friendly Control"
+            : snapshot.ownerId
+              ? `Held by ${translateFactionId(snapshot.ownerId)}`
+              : "Open System";
+
+        let detail = definition.summary;
+        switch (definition.value) {
+          case "expand":
+            detail = `${ownerText}. ${yieldText}. ${
+              plan ? `About ${formatTravelSpan(plan.travelDays)} from ${translateSystemId(homeSystemId)}.` : "Route unresolved from home seat."
+            }`;
+            break;
+          case "threat":
+            detail = `${ownerText}. ${
+              plan ? `Can reach our seat in about ${formatTravelSpan(plan.travelDays)}.` : "Watch this approach for future pressure."
+            }`;
+            break;
+          case "screen":
+            detail = `${(system.starlaneLinks ?? []).length} ${(system.starlaneLinks ?? []).length === 1 ? "starlane" : "starlanes"} connected. Probe and blockade warning value is high here.`;
+            break;
+          case "economic_priority":
+            detail = `${ownerText}. ${yieldText}. Protect throughput and courier access here.`;
+            break;
+          case "future_link":
+            detail = `${ownerText}. ${
+              plan ? `Within ${formatTravelSpan(plan.travelDays)} of the seat.` : "Track this for later outward connection."
+            }`;
+            break;
+          default:
+            detail = `${ownerText}. ${definition.summary}`;
+            break;
+        }
+
+        return {
+          systemId,
+          systemName: system.name,
+          value: definition.value,
+          label: definition.label,
+          severity: definition.severity,
+          updatedAt: record.updatedAt ?? "",
+          ownerText,
+          yieldText,
+          detail,
+        };
+      })
+      .filter(Boolean)
+      .sort((left, right) =>
+        String(right.updatedAt ?? "").localeCompare(String(left.updatedAt ?? ""))
+        || left.systemName.localeCompare(right.systemName),
+      );
+  });
+
+  const strategyBoardSummary = computed(() => ({
+    total: strategicMarkingRows.value.length,
+    expand: strategicMarkingRows.value.filter((row) => row.value === "expand").length,
+    threat: strategicMarkingRows.value.filter((row) => row.value === "threat").length,
+    screen: strategicMarkingRows.value.filter((row) => row.value === "screen").length,
+    economic: strategicMarkingRows.value.filter((row) => row.value === "economic_priority").length,
+    futureLink: strategicMarkingRows.value.filter((row) => row.value === "future_link").length,
+  }));
 
   const originOptions = computed(() =>
     ownedSystems.value.map((system) => {
@@ -1469,6 +1624,7 @@ function effectiveMass(ships, cargoSalt, metals) {
       title: system.name,
       canSeeLocalIntel,
       homeLabel,
+      strategicMarking: strategicMarkingRecord(system.id),
       owner:
         isSeatHome
           ? "Friendly Control"
@@ -2122,6 +2278,7 @@ function effectiveMass(ships, cargoSalt, metals) {
         ui.plannerLoadedKey = null;
         ui.planner.speculation = "";
         ui.planner.productionBySystemId = {};
+        ui.planner.strategicMarkingsBySystemId = {};
         ui.planner.archivedReportsById = {};
         ui.planner.followUpReportsById = {};
         return;
@@ -2143,6 +2300,10 @@ function effectiveMass(ships, cargoSalt, metals) {
         nextState?.productionBySystemId && typeof nextState.productionBySystemId === "object"
           ? nextState.productionBySystemId
           : {};
+      ui.planner.strategicMarkingsBySystemId =
+        nextState?.strategicMarkingsBySystemId && typeof nextState.strategicMarkingsBySystemId === "object"
+          ? nextState.strategicMarkingsBySystemId
+          : {};
       ui.planner.archivedReportsById =
         nextState?.archivedReportsById && typeof nextState.archivedReportsById === "object"
           ? nextState.archivedReportsById
@@ -2159,6 +2320,7 @@ function effectiveMass(ships, cargoSalt, metals) {
     () => plannerStorageKey.value ? JSON.stringify({
       speculation: ui.planner.speculation,
       productionBySystemId: ui.planner.productionBySystemId,
+      strategicMarkingsBySystemId: ui.planner.strategicMarkingsBySystemId,
       archivedReportsById: ui.planner.archivedReportsById,
       followUpReportsById: ui.planner.followUpReportsById,
     }) : null,
@@ -3106,6 +3268,259 @@ function effectiveMass(ships, cargoSalt, metals) {
     strongestThreat: diplomacyRows.value[0] ?? null,
   }));
 
+  const advisorBriefs = computed(() => {
+    if (!currentSeat.value || !world.scenario) {
+      return [];
+    }
+
+    const expandTarget =
+      strategicMarkingRows.value.find((row) => row.value === "expand")
+      ?? strategicMarkingRows.value.find((row) => row.value === "explore")
+      ?? null;
+    const threatTarget = strategicMarkingRows.value.find((row) => row.value === "threat") ?? null;
+    const screenTarget = strategicMarkingRows.value.find((row) => row.value === "screen") ?? null;
+    const economicTarget = strategicMarkingRows.value.find((row) => row.value === "economic_priority") ?? null;
+    const futureLinkTarget = strategicMarkingRows.value.find((row) => row.value === "future_link") ?? null;
+    const strongestThreat = diplomacySummary.value.strongestThreat;
+
+    const briefs = [];
+
+    if (threatTarget || strongestThreat?.stanceKey === "hostile") {
+      const threatName = threatTarget?.systemName ?? strongestThreat?.factionName ?? "the frontier";
+      briefs.push({
+        advisorId: "marshal",
+        advisorName: "Marshal Ilyan",
+        role: "Campaigns",
+        severity: threatTarget ? "danger" : "warn",
+        headline: threatTarget
+          ? `${threatName} can pin us if we strip the frontier`
+          : `${threatName} is already setting the tempo`,
+        summary: threatTarget
+          ? `You marked ${threatName} as a threat. Keep a reserve or a screen in place before sending the last good ships elsewhere.`
+          : `${strongestThreat.factionName} is the sharpest immediate military concern on the board.`,
+        reasoning: threatTarget
+          ? "This is the sort of pressure point that turns one blocked lane or one delayed reinforcement into a losing battle."
+          : "If they force us to react everywhere at once, they win before the fleet action starts.",
+      });
+    } else if (expandTarget) {
+      briefs.push({
+        advisorId: "marshal",
+        advisorName: "Marshal Ilyan",
+        role: "Campaigns",
+        severity: "warn",
+        headline: `Take ${expandTarget.systemName}, but do not go naked`,
+        summary: `If ${expandTarget.systemName} is the next claim, hold enough ships at home to answer a sudden burn or blockade.`,
+        reasoning: "Expansion wins openings, but overextension is how one pinned fleet becomes a story about avoidable defeat.",
+      });
+    }
+
+    if (expandTarget || threatTarget || screenTarget) {
+      const probeSystem = threatTarget ?? expandTarget ?? screenTarget;
+      const probeStatus = probeSystem ? probeStatusForSystem(probeSystem.systemId) : null;
+      briefs.push({
+        advisorId: "spymaster",
+        advisorName: "Spymaster Vey",
+        role: "Reconnaissance",
+        severity:
+          probeStatus?.status === "on_station" || probeStatus?.status === "friendly_control"
+            ? "success"
+            : "info",
+        headline:
+          probeStatus?.status === "on_station" || probeStatus?.status === "friendly_control"
+            ? `${probeSystem.systemName} is no longer a blind corner`
+            : `Probe ${probeSystem.systemName} before you trust the picture`,
+        summary:
+          probeStatus?.status === "on_station" || probeStatus?.status === "friendly_control"
+            ? `We already have direct local visibility at ${probeSystem.systemName}. Use that certainty before it goes stale.`
+            : `${probeSystem.systemName} matters enough to mark. That is exactly when we should pay to narrow uncertainty, not after a rival commits.`,
+        reasoning:
+          probeStatus?.status === "on_station" || probeStatus?.status === "friendly_control"
+            ? "When our probe net is in place, we stop guessing which approach the enemy actually chose."
+            : "Without a probe, one enemy burn can force us to defend several plausible destinations and waste the opening.",
+      });
+    }
+
+    if (economicTarget || expandTarget || futureLinkTarget) {
+      const target = economicTarget ?? expandTarget ?? futureLinkTarget;
+      briefs.push({
+        advisorId: "steward",
+        advisorName: "Steward Sen",
+        role: "Logistics",
+        severity: economicTarget ? "secondary" : "success",
+        headline: `${target.systemName} compounds if we support it early`,
+        summary:
+          target.value === "future_link"
+            ? `${target.systemName} is a good outward hinge, but only if we build the stockpile and courier habit to sustain it later.`
+            : `${target.systemName} is marked as a priority. Salt, metals, and shipping discipline here will matter more than one dramatic fleet launch.`,
+        reasoning:
+          target.value === "expand"
+            ? "A good second system pays us back every day. Missing that window costs more than one lost skirmish."
+            : "Strong logistics turns markings into plans instead of hopeful annotations.",
+      });
+    }
+
+    if (strongestThreat) {
+      briefs.push({
+        advisorId: "envoy",
+        advisorName: "Envoy Tal",
+        role: "Signals",
+        severity:
+          strongestThreat.stanceKey === "hostile"
+            ? "warn"
+            : strongestThreat.stanceKey === "tense"
+              ? "secondary"
+              : "info",
+        headline:
+          strongestThreat.stanceKey === "hostile"
+            ? `Send a hard pigeon to ${strongestThreat.factionName}`
+            : `Probe the intent behind ${strongestThreat.factionName}`,
+        summary:
+          strongestThreat.stanceKey === "hostile"
+            ? `A diplomatic pigeon will not stop a fleet, but the reply may tell us whether they want tribute, delay, or fear.`
+            : `${strongestThreat.factionName} is close enough that silence is also a signal. A message can expose doctrine, nerves, or opportunism.`,
+        reasoning: "Diplomacy in this game is partly intelligence gathering. What they say matters, but how quickly and how sharply they answer matters too.",
+      });
+    }
+
+    return briefs.slice(0, 4);
+  });
+
+  const dailyBrief = computed(() => {
+    if (!currentSeat.value || !world.scenario) {
+      return null;
+    }
+
+    const expandTarget =
+      strategicMarkingRows.value.find((row) => row.value === "expand")
+      ?? strategicMarkingRows.value.find((row) => row.value === "economic_priority")
+      ?? strategicMarkingRows.value.find((row) => row.value === "future_link")
+      ?? strategicMarkingRows.value.find((row) => row.value === "explore")
+      ?? null;
+    const threatTarget = strategicMarkingRows.value.find((row) => row.value === "threat") ?? null;
+    const screenTarget = strategicMarkingRows.value.find((row) => row.value === "screen") ?? null;
+    const strongestThreat = diplomacySummary.value.strongestThreat;
+    const actionableProbeDepot = probeCommandRows.value.find((row) => row.launchCapable) ?? null;
+    const lessonSource =
+      feedItems.value.find((item) =>
+        item.kicker === "Battle report"
+        || item.kicker === "Incoming threat"
+        || item.kicker === "Blockade burn"
+        || item.kicker === "Control shift"
+        || item.kicker === "Recon on station",
+      )
+      ?? feedItems.value[0]
+      ?? null;
+
+    let opportunity = {
+      key: "opportunity",
+      label: "Opportunity",
+      severity: "info",
+      title: "Build the next edge deliberately",
+      summary: "Use reconnaissance, trade, and the frontier to create the next decision before a rival creates one for you.",
+      source: "General command guidance",
+    };
+
+    if (expandTarget) {
+      const probeStatus = probeStatusForSystem(expandTarget.systemId);
+      opportunity = {
+        key: "opportunity",
+        label: "Opportunity",
+        severity: expandTarget.value === "expand" ? "success" : "secondary",
+        title:
+          expandTarget.value === "expand"
+            ? `${expandTarget.systemName} is the clearest growth window`
+            : `${expandTarget.systemName} is worth shaping early`,
+        summary:
+          probeStatus.status === "on_station" || probeStatus.status === "friendly_control"
+            ? `${expandTarget.detail} We already have the local picture, so timing now matters more than certainty.`
+            : `${expandTarget.detail} A probe there would collapse uncertainty before the claim or convoy commits.`,
+        source: "Strategy board",
+      };
+    } else if (actionableProbeDepot) {
+      opportunity = {
+        key: "opportunity",
+        label: "Opportunity",
+        severity: "info",
+        title: `${actionableProbeDepot.systemName} can widen the picture today`,
+        summary: `${actionableProbeDepot.readyProbes} ready probes and ${formatNumber(actionableProbeDepot.saltStockpile)} salt are waiting there. Turn spare stores into warning time.`,
+        source: "Probe net",
+      };
+    }
+
+    let threat = {
+      key: "threat",
+      label: "Threat",
+      severity: "warn",
+      title: "The board is quiet, but not safe",
+      summary: "Use the diplomacy table and probe coverage to decide where silence is genuine and where it hides a commitment in transit.",
+      source: "Situation estimate",
+    };
+
+    if (threatTarget) {
+      threat = {
+        key: "threat",
+        label: "Threat",
+        severity: "danger",
+        title: `${threatTarget.systemName} is the pressure point`,
+        summary: `${threatTarget.detail} If we strip the wrong reserve, this is where a pin, blockade, or surprise arrival will punish us.`,
+        source: "Strategy board",
+      };
+    } else if (strongestThreat) {
+      threat = {
+        key: "threat",
+        label: "Threat",
+        severity: strongestThreat.stanceSeverity,
+        title: `${strongestThreat.factionName} is setting the current risk`,
+        summary: `${strongestThreat.stanceSummary} ${strongestThreat.latestSignalText}`,
+        source: "Diplomacy board",
+      };
+    } else if (screenTarget) {
+      threat = {
+        key: "threat",
+        label: "Threat",
+        severity: "warn",
+        title: `${screenTarget.systemName} could blindside the lane`,
+        summary: `${screenTarget.detail} If that screen point goes unwatched, we give away reaction time for free.`,
+        source: "Strategy board",
+      };
+    }
+
+    let lesson = {
+      key: "lesson",
+      label: "Lesson",
+      severity: "secondary",
+      title: "Interpretation wins more than volume",
+      summary: "The point of the daily queue is not to read everything. It is to notice which piece of information changes the plan.",
+      source: "Command doctrine",
+    };
+
+    if (lessonSource) {
+      lesson = {
+        key: "lesson",
+        label: "Lesson",
+        severity: lessonSource.tone === "danger" ? "warn" : lessonSource.tone,
+        title: `Lesson from ${lessonSource.kicker.toLowerCase()}`,
+        summary: lessonSource.analysis,
+        source: lessonSource.title,
+      };
+    } else if (advisorBriefs.value.length > 0) {
+      const advisor = advisorBriefs.value[0];
+      lesson = {
+        key: "lesson",
+        label: "Lesson",
+        severity: advisor.severity === "danger" ? "warn" : advisor.severity,
+        title: `${advisor.advisorName} is teaching a bias`,
+        summary: advisor.reasoning,
+        source: advisor.role,
+      };
+    }
+
+    return {
+      date: currentWorldDate.value ?? world.scenario.startDate,
+      items: [opportunity, threat, lesson],
+    };
+  });
+
   function archiveReportItem(item) {
     if (!item?.id) {
       return;
@@ -3224,6 +3639,42 @@ function effectiveMass(ships, cargoSalt, metals) {
     });
   }
 
+  function setStrategicMarking(systemId, value) {
+    if (!systemId) {
+      return;
+    }
+
+    const definition = strategicMarkingDefinition(value);
+    if (!definition) {
+      clearStrategicMarking(systemId);
+      return;
+    }
+
+    ui.planner.strategicMarkingsBySystemId = {
+      ...ui.planner.strategicMarkingsBySystemId,
+      [systemId]: {
+        value: definition.value,
+        updatedAt: currentWorldDate.value ?? world.scenario?.startDate ?? "",
+      },
+    };
+    api.status = `${translateSystemId(systemId)} marked ${definition.label.toLowerCase()}`;
+    api.tone = definition.severity === "danger" ? "warn" : definition.severity;
+    api.error = "";
+  }
+
+  function clearStrategicMarking(systemId) {
+    if (!systemId || !ui.planner.strategicMarkingsBySystemId?.[systemId]) {
+      return;
+    }
+
+    const next = { ...ui.planner.strategicMarkingsBySystemId };
+    delete next[systemId];
+    ui.planner.strategicMarkingsBySystemId = next;
+    api.status = `${translateSystemId(systemId)} cleared`;
+    api.tone = "success";
+    api.error = "";
+  }
+
   function setSpeculationText(value) {
     ui.planner.speculation = value ?? "";
   }
@@ -3234,6 +3685,7 @@ function effectiveMass(ships, cargoSalt, metals) {
     PRODUCTION_FOCUS_OPTIONS,
     PRODUCTION_LINE_FOCUS_OPTIONS,
     PRODUCTION_POSTURE_OPTIONS,
+    STRATEGIC_MARKING_OPTIONS,
     api,
     testHarness,
     world,
@@ -3248,6 +3700,11 @@ function effectiveMass(ships, cargoSalt, metals) {
     selectedSystemProbeStatus,
     ownedSystems,
     productionPlannerRows,
+    selectedSystemMarking,
+    strategicMarkingRows,
+    strategyBoardSummary,
+    advisorBriefs,
+    dailyBrief,
     probeCommandRows,
     shipOperationRows,
     shipOperationSummary,
@@ -3299,6 +3756,8 @@ function effectiveMass(ships, cargoSalt, metals) {
     setProductionPosture,
     setProductionLineFocus,
     setProductionLineQuantity,
+    setStrategicMarking,
+    clearStrategicMarking,
     setSpeculationText,
     submitImmediateProbe,
     submitActiveOrder,

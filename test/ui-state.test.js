@@ -782,6 +782,8 @@ test("ui state keeps production schedules and speculation in player planning sta
   store.setProductionLineQuantity("blue_home", "yard_2", 1);
   store.setProductionPosture("blue_home", "siege");
   store.setSpeculationText("Verdant Bastion is likely banking ships for Tau Ceti.");
+  store.setStrategicMarking("blue_frontier_a", "expand");
+  store.setStrategicMarking("green_home", "threat");
   await nextTick();
 
   const updatedHomeRow = store.productionPlannerRows.value.find((row) => row.systemId === "blue_home");
@@ -790,6 +792,9 @@ test("ui state keeps production schedules and speculation in player planning sta
   assert.equal(updatedHomeRow?.posture, "siege");
   assert.equal(updatedHomeRow?.lines.find((line) => line.id === "yard_2")?.focus, "shipyard");
   assert.equal(store.ui.planner.speculation, "Verdant Bastion is likely banking ships for Tau Ceti.");
+  assert.equal(store.strategyBoardSummary.value.total, 2);
+  assert.equal(store.strategicMarkingRows.value.some((row) => row.systemId === "blue_frontier_a" && row.value === "expand"), true);
+  assert.equal(store.strategicMarkingRows.value.some((row) => row.systemId === "green_home" && row.value === "threat"), true);
 
   const reloaded = createCommandState({
     fetchImpl: createWorkerFetch(),
@@ -805,4 +810,50 @@ test("ui state keeps production schedules and speculation in player planning sta
   assert.equal(reloadedHomeRow?.posture, "siege");
   assert.equal(reloadedHomeRow?.lines.find((line) => line.id === "yard_2")?.focus, "shipyard");
   assert.equal(reloaded.ui.planner.speculation, "Verdant Bastion is likely banking ships for Tau Ceti.");
+  assert.equal(reloaded.strategyBoardSummary.value.total, 2);
+  assert.equal(reloaded.strategicMarkingRows.value.some((row) => row.systemId === "blue_frontier_a" && row.value === "expand"), true);
+  assert.equal(reloaded.strategicMarkingRows.value.some((row) => row.systemId === "green_home" && row.value === "threat"), true);
+});
+
+test("ui state turns strategic markings into visible council advice", async () => {
+  const store = createCommandState({
+    fetchImpl: createWorkerFetch(),
+    locationSearch: "?scenario=profile_frontier_vs_turtle&seat=blue",
+  });
+
+  await store.loadInitialData();
+  store.selectSystem("blue_frontier_a");
+  await nextTick();
+
+  store.setStrategicMarking("blue_frontier_a", "expand");
+  store.setStrategicMarking("green_home", "threat");
+  await nextTick();
+
+  assert.equal(store.selectedSystemOverview.value?.strategicMarking?.label, "Expand");
+  assert.equal(store.STRATEGIC_MARKING_OPTIONS.some((option) => option.value === "future_link"), true);
+  assert.equal(store.advisorBriefs.value.some((brief) => brief.advisorId === "marshal" && /pin us|setting the tempo/u.test(brief.headline)), true);
+  assert.equal(store.advisorBriefs.value.some((brief) => brief.advisorId === "spymaster" && /trust the picture|blind corner/u.test(`${brief.headline} ${brief.reasoning}`)), true);
+  assert.equal(store.advisorBriefs.value.some((brief) => brief.advisorId === "envoy" && /Send a hard pigeon|Probe the intent/u.test(brief.headline)), true);
+});
+
+test("ui state frames the day as opportunity, threat, and lesson", async () => {
+  const store = createCommandState({
+    fetchImpl: createWorkerFetch(),
+    locationSearch: "?scenario=profile_frontier_vs_turtle&seat=blue",
+  });
+
+  await store.loadInitialData();
+  store.setStrategicMarking("blue_frontier_a", "expand");
+  store.setStrategicMarking("green_home", "threat");
+  await nextTick();
+
+  assert.equal(store.dailyBrief.value?.items.length, 3);
+  assert.deepEqual(store.dailyBrief.value?.items.map((item) => item.key), [
+    "opportunity",
+    "threat",
+    "lesson",
+  ]);
+  assert.match(store.dailyBrief.value?.items[0]?.title ?? "", /Barnard's Star/u);
+  assert.match(store.dailyBrief.value?.items[1]?.title ?? "", /Tau Ceti/u);
+  assert.equal((store.dailyBrief.value?.items[2]?.summary ?? "").length > 0, true);
 });

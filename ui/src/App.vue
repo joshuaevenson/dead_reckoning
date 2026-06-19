@@ -15,6 +15,7 @@ const {
   PRODUCTION_FOCUS_OPTIONS,
   PRODUCTION_LINE_FOCUS_OPTIONS,
   PRODUCTION_POSTURE_OPTIONS,
+  STRATEGIC_MARKING_OPTIONS,
   api,
   world,
   ui,
@@ -24,6 +25,10 @@ const {
   selectedSystemFriendly,
   selectedSystemOverview,
   summaryCards,
+  strategicMarkingRows,
+  strategyBoardSummary,
+  advisorBriefs,
+  dailyBrief,
   productionPlannerRows,
   probeCommandRows,
   shipOperationRows,
@@ -71,6 +76,8 @@ const {
   setProductionPosture,
   setProductionLineFocus,
   setProductionLineQuantity,
+  setStrategicMarking,
+  clearStrategicMarking,
   setSpeculationText,
   submitImmediateProbe,
   submitActiveOrder,
@@ -187,9 +194,36 @@ onMounted(async () => {
       </div>
     </header>
 
-    <Message v-if="api.error" severity="error" class="loading-message">
-      {{ api.error }}
-    </Message>
+    <div class="top-stack">
+      <Message v-if="api.error" severity="error" class="loading-message">
+        {{ api.error }}
+      </Message>
+
+      <section v-if="dailyBrief" class="daily-brief-panel">
+        <div class="planning-header">
+          <div>
+            <div class="panel-kicker">Daily Brief</div>
+            <div class="panel-title">One Opportunity, One Threat, One Lesson</div>
+          </div>
+          <Tag severity="contrast" rounded>{{ dailyBrief.date }}</Tag>
+        </div>
+
+        <div class="daily-brief-grid">
+          <article
+            v-for="item in dailyBrief.items"
+            :key="item.key"
+            :class="['feed-card', 'daily-brief-card', `feed-tone-${item.severity === 'contrast' ? 'info' : item.severity}`]"
+          >
+            <div class="feed-card-top">
+              <div class="feed-kicker">{{ item.label }}</div>
+              <Tag :severity="item.severity" rounded>{{ item.source }}</Tag>
+            </div>
+            <div class="feed-title">{{ item.title }}</div>
+            <p class="feed-copy">{{ item.summary }}</p>
+          </article>
+        </div>
+      </section>
+    </div>
 
     <div class="workspace-shell">
       <aside class="workspace-rail">
@@ -349,6 +383,34 @@ onMounted(async () => {
                     >
                       <span class="system-fact-label">{{ fact.label }}</span>
                       <span class="system-fact-value">{{ fact.value }}</span>
+                    </div>
+                  </div>
+
+                  <div class="system-marking-panel">
+                    <div class="panel-kicker">Strategic Marking</div>
+                    <div class="system-marking-controls">
+                      <Select
+                        :model-value="selectedSystemOverview.strategicMarking?.value ?? null"
+                        :options="STRATEGIC_MARKING_OPTIONS"
+                        option-label="label"
+                        option-value="value"
+                        placeholder="Mark this system"
+                        class="system-marking-select"
+                        @update:model-value="setStrategicMarking(selectedSystem.system.id, $event)"
+                      />
+                      <Button
+                        label="Clear"
+                        icon="pi pi-times"
+                        severity="secondary"
+                        outlined
+                        @click="clearStrategicMarking(selectedSystem.system.id)"
+                      />
+                    </div>
+                    <div v-if="selectedSystemOverview.strategicMarking" class="system-marking-summary">
+                      <Tag :severity="selectedSystemOverview.strategicMarking.severity" rounded>
+                        {{ selectedSystemOverview.strategicMarking.label }}
+                      </Tag>
+                      <span>{{ selectedSystemOverview.strategicMarking.summary }}</span>
                     </div>
                   </div>
 
@@ -1110,6 +1172,67 @@ onMounted(async () => {
                 </div>
                 <div v-else class="map-empty-state reports-empty-state notebook-empty-state">
                   No follow-up items yet. Flag reports from the queue when they deserve a longer pass in your notes.
+                </div>
+              </section>
+
+              <section class="notebook-strategy-panel">
+                <div class="panel-kicker">Strategy Board</div>
+                <div class="notebook-copy">
+                  Mark systems on the map to teach the council what you care about. Their advice will start disagreeing for useful reasons.
+                </div>
+
+                <div class="strategy-summary-grid">
+                  <div class="operations-summary-card focus">
+                    <strong>{{ strategyBoardSummary.total }}</strong>
+                    <span>Marked systems</span>
+                  </div>
+                  <div class="operations-summary-card">
+                    <strong>{{ strategyBoardSummary.expand }}</strong>
+                    <span>Expansion targets</span>
+                  </div>
+                  <div class="operations-summary-card">
+                    <strong>{{ strategyBoardSummary.threat }}</strong>
+                    <span>Threat flags</span>
+                  </div>
+                  <div class="operations-summary-card">
+                    <strong>{{ strategyBoardSummary.screen }}</strong>
+                    <span>Screen points</span>
+                  </div>
+                </div>
+
+                <div v-if="strategicMarkingRows.length > 0" class="strategy-markings-list">
+                  <article
+                    v-for="row in strategicMarkingRows"
+                    :key="`strategy-${row.systemId}`"
+                    :class="['feed-card', 'feed-card-compact', `feed-tone-${row.severity === 'contrast' ? 'info' : row.severity}`]"
+                  >
+                    <div class="feed-card-top">
+                      <div class="feed-kicker">Marked System</div>
+                      <Tag :severity="row.severity" rounded>{{ row.label }}</Tag>
+                    </div>
+                    <div class="feed-title">{{ row.systemName }}</div>
+                    <p class="feed-copy">{{ row.detail }}</p>
+                  </article>
+                </div>
+                <div v-else class="map-empty-state reports-empty-state notebook-empty-state">
+                  No systems marked yet. Use the focused-system panel on the map to tag expansion, threat, and screening priorities.
+                </div>
+
+                <div class="panel-kicker">Council Readout</div>
+                <div class="advisor-brief-list">
+                  <article
+                    v-for="brief in advisorBriefs"
+                    :key="brief.advisorId"
+                    :class="['feed-card', `feed-tone-${brief.severity === 'contrast' ? 'info' : brief.severity}`]"
+                  >
+                    <div class="feed-card-top">
+                      <div class="feed-kicker">{{ brief.role }}</div>
+                      <Tag :severity="brief.severity" rounded>{{ brief.advisorName }}</Tag>
+                    </div>
+                    <div class="feed-title">{{ brief.headline }}</div>
+                    <p class="feed-copy">{{ brief.summary }}</p>
+                    <p class="feed-impact"><span>Why:</span> {{ brief.reasoning }}</p>
+                  </article>
                 </div>
               </section>
 

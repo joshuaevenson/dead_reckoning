@@ -45,6 +45,7 @@ body {
 }
 
 .command-header,
+.daily-brief-panel,
 .map-panel,
 .feed-panel,
 .orders-panel {
@@ -55,6 +56,7 @@ body {
 }
 
 .command-header,
+.daily-brief-panel,
 .map-panel,
 .feed-panel,
 .orders-panel,
@@ -126,8 +128,35 @@ body {
 }
 
 .loading-message {
-  grid-row: 2;
   margin: 0;
+}
+
+.top-stack {
+  grid-row: 2;
+  min-height: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.daily-brief-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.daily-brief-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.daily-brief-card {
+  min-height: 132px;
+  align-content: start;
+}
+
+.daily-brief-card .p-tag {
+  max-width: 180px;
 }
 
 .workspace-shell {
@@ -847,11 +876,12 @@ body {
 .notebook-layout {
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  grid-template-columns: minmax(260px, 340px) minmax(300px, 420px) minmax(0, 1fr);
   gap: 12px;
 }
 
 .notebook-todo-panel,
+.notebook-strategy-panel,
 .notebook-notes-panel {
   min-height: 0;
   display: grid;
@@ -869,6 +899,48 @@ body {
 .notebook-copy {
   color: var(--muted);
   line-height: 1.45;
+}
+
+.system-marking-panel {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(120, 180, 255, 0.08);
+  background: rgba(4, 11, 18, 0.66);
+}
+
+.system-marking-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.system-marking-summary {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.system-marking-select {
+  min-width: 0;
+}
+
+.strategy-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.strategy-markings-list,
+.advisor-brief-list {
+  display: grid;
+  gap: 8px;
+  align-content: start;
 }
 
 .notebook-todo-list,
@@ -1463,6 +1535,7 @@ body {
 
   .map-main-layout,
   .notebook-layout,
+  .daily-brief-grid,
   .form-grid,
   .operations-summary-grid,
   .diplomacy-summary-grid,
