@@ -1978,6 +1978,26 @@ It is especially valuable because it lets the player:
 
 LLMs could make the game feel much more personal and alive, but they should usually sit on top of deterministic simulation rather than replace it. The model should add identity, interpretation, and believable behavior while staying grounded in actual world state, player knowledge, and explicit faction goals.
 
+### AI-Optional Overlay Architecture
+
+The system should be fully playable, inspectable, and testable without any model integration.
+
+That means:
+
+* deterministic simulation, stored profiles, rule-driven interpretation, and template-capable content should be enough to run the whole product in a symbolic mode
+* AI should be an optional runtime enrichment layer that improves wording, ranking, proposal quality, variation, and characterization without becoming the sole source of core gameplay behavior
+* when AI is disabled, unavailable, rate-limited, or fails validation, the game should fall back to the symbolic baseline rather than dropping the feature entirely
+* tests should treat the symbolic baseline as the reference implementation and use AI only through stubs, fixtures, or optional integration passes
+
+For implementation, AI-adjacent systems should usually be split into four layers:
+
+* `derive`: compute facts from deterministic state, player knowledge, and stored profiles
+* `compose`: build canonical structured outputs using rules, heuristics, templates, and static profile data
+* `enrich`: optionally ask AI to rewrite, expand, rank, or personalize those canonical outputs
+* `validate`: ensure enriched output still matches allowed structure and visible knowledge, otherwise fall back to the composed baseline
+
+The UI and the rest of the codebase should consume canonical structured outputs, not raw model text. AI should plug into the composition pipeline rather than define a parallel gameplay path.
+
 ### Top Priority Directions
 
 The most promising near- to mid-term LLM directions appear to be:
@@ -1991,13 +2011,13 @@ The most promising near- to mid-term LLM directions appear to be:
 
 ### Empire DNA And Faction Identity
 
-Empire identity should be an onboarding conversation, not a single text box.
+Empire identity should be an onboarding flow, not a single text box. The symbolic baseline can use structured frames, defaults, and review screens, while AI can optionally turn that same flow into a conversation.
 
 One useful flow is:
 
 * prompt the player with starting identity frames such as `House`, `Corporation`, `Republic`, `Cult`, `Dynasty`, or `League`
-* let the player talk with an AI until the identity feels right
-* compile that conversation into a structured faction profile that drives the rest of the experience
+* let the player refine the identity through structured choices, with optional AI conversation when available
+* compile the result into a structured faction profile that drives the rest of the experience
 
 The structured profile could include:
 
@@ -2028,7 +2048,7 @@ That profile can then drive:
 
 Doctrine should create coherence and pressure, but not hard restrictions.
 
-The AI can help propose or refine doctrines such as:
+A symbolic baseline can offer explicit doctrine cards or proposals, and AI can help propose or refine doctrines such as:
 
 * never cede the frontier
 * protect trade before honor
@@ -2156,6 +2176,8 @@ These may become valuable once the core identity, advisor, politics, and intelli
 * LLM output should never invent hidden world facts; it should only speak from actual state, delivered reports, or clearly marked inference.
 * Strategic decisions and outcomes should still resolve through explicit game rules so players can learn, predict, and outplay the system rather than feeling like results are arbitrary.
 * The most effective architecture is likely layered: deterministic simulation for truth, small models for advisor interaction and NPC intent, and stronger models only where higher-quality writing materially improves the player experience.
+* Every AI-facing feature should have a non-AI symbolic baseline that remains shippable, testable, and understandable on its own.
+* AI should consume and produce canonical schemas owned by the deterministic product, not invent its own hidden formats or bypass validation.
 
 ## TODO
 
@@ -2175,104 +2197,301 @@ These pieces are now implemented in the local command table and should be treate
 * advisor suggestions already react to those strategic markings
 * reports can be triaged into archive and notebook follow-up queues
 
-### Near-Term Advisor And Opening TODO
+### Standardized Backlog Shape
 
-These are the remaining pieces most directly adjacent to the current implementation and should likely be tackled before broader LLM or political systems:
+Future work should be captured as numbered work items rather than freeform idea lists.
 
-* add first-class diplomatic pigeons to the advisor pane instead of only implying diplomatic pressure through stance summaries
-* generate distinct faction voices for pigeons such as threatening, conciliatory, opportunistic, or deceptive messages
-* let advisors disagree explicitly about how to interpret the same pigeon or report
-* make more consequence explanations cite concrete causes such as a pinned fleet, a blockade on a specific lane, a late probe, or a stripped reserve
-* connect strategic markings more deeply into reports so advisors can say things like "your marked threat world just received reinforcements"
-* add stronger after-action explanation flows for battles, lost control, failed expansion, and successful screening
-* build the early-game frontier pocket/apprenticeship setup where the player begins in a partially isolated AI neighborhood
-* implement the home-system salt ramp and outward starlane progression that eventually links the local pocket to the wider galaxy
-* ensure the single-player or AI-heavy opening reliably produces at least one opportunity, one threat, and one lesson each day
-* decide whether advisor reliability should become an explicit mechanic now or stay implicit until more advisor disagreement exists
+Each work item should include:
 
-### Core Product Decisions
+* `Outcome`: the player-facing capability or design contract being added
+* `Scope`: the minimum slice needed to land that capability
+* `Done when`: concrete acceptance criteria, preferably including a scenario or UI-state regression test
+* `Dependencies`: the earlier work items or decisions that must exist first
 
-* define the first playable scope for LLM-driven features and decide what belongs in phase 1 versus later phases
-* define which model tiers are needed for which jobs such as advisor interaction, summarization, NPC intent generation, and high-quality narrative writing
-* define a hard contract between deterministic simulation truth and generated interpretation so all AI features stay grounded
-* define what data each AI-facing subsystem is allowed to see, especially for player knowledge versus hidden world truth
+For any work item that touches generated text, advisor reasoning, identity, recap, doctrine, or diplomacy, also specify:
 
-### Empire DNA Onboarding
+* `Symbolic baseline`: the non-AI implementation that works with stored profiles, heuristics, and templates only
+* `AI overlay`: the optional enrichment pass that can improve the experience without changing the canonical schema
 
-* design a conversational empire-creation flow that starts from frames like `House`, `Corporation`, `Republic`, `Cult`, `Dynasty`, or `League`
-* define the structured faction profile produced by that conversation
-* decide which parts of the profile are player-editable after creation and which are historical record
-* generate naming, tone, ceremony, slogans, and mythic language from the structured profile
-* persist the faction profile in a format that can be reused by advisors, reports, diplomacy, and recap systems
+When possible, prefer vertical slices that ship one meaningful new behavior end-to-end instead of broad framework work with no immediate player value.
+The baseline path should always land first or at least be landable independently.
 
-### Doctrine System
+### Phase 0 Foundation Contracts: Symbolic-First Architecture
 
-* define how doctrines are proposed, accepted, revised, or ignored by the player
-* define how doctrines influence advisor tone and recommendations without creating hard gameplay locks
-* decide whether doctrines are explicit player choices, AI-suggested defaults, or both
-* define how NPC doctrines are represented internally and how players might infer them from behavior
+#### `SYS-01` Fully Playable AI-Off Baseline
 
-### Advisor-Mediated Orders
+* `Outcome`: the command table, reports, diplomacy, identity, and opening loop can all function without any AI integration
+* `Scope`: identify every player-facing system that currently assumes generated content and define the symbolic fallback path for it
+* `Done when`: the repo supports an explicit AI-disabled mode where the product remains coherent and useful rather than feature-gated
+* `Dependencies`: none
 
-* add an advisor input box where the player can express intent in natural language
-* define the pipeline that turns player intent into one or more structured candidate plans
-* define the approval UX so no freeform request executes without review
-* expose assumptions, risks, and tradeoffs for each candidate plan before approval
-* allow the player to edit, reject, or manually recreate a suggested plan in the canonical UI
-* define how advisors explain ambiguity when the player's request is underspecified
-* create example intents such as scouting a system, reinforcing a frontier, launching a probe, fortifying a world, or preparing a diplomatic message
+#### `SYS-02` Canonical Symbolic Schemas
 
-### Internal Politics
+* `Outcome`: advisor items, diplomatic pigeons, recap entries, doctrine proposals, faction profiles, and candidate plans all have canonical structured schemas owned by deterministic code
+* `Scope`: define the structures that symbolic composition and AI enrichment will both use
+* `Done when`: the UI and tests consume stable structured objects rather than format-specific raw strings
+* `Dependencies`: `SYS-01`
 
-* define the first set of internal political blocs such as military hawks, trade guilds, frontier governors, intelligence bureau, and state cult or civic ideology
-* define what each bloc cares about materially and ideologically
-* define how those blocs surface through specific advisors, reports, and disagreements
-* define whether bloc influence changes over time based on victories, losses, expansion, shortages, or scandals
-* create a first-pass system for advisor disagreement so the player feels like they are governing competing interests rather than receiving generic helper text
+#### `SYS-03` Overlay Function Boundaries
 
-### NPC Belief Models
+* `Outcome`: AI-adjacent features have an explicit `derive -> compose -> enrich -> validate` boundary so the symbolic and AI paths share the same core pipeline
+* `Scope`: document the function split and apply it to the first advisor-facing features
+* `Done when`: future coding agents can add AI enrichment to an existing symbolic feature without forking the gameplay path or duplicating business logic
+* `Dependencies`: `SYS-02`
 
-* define the hidden belief state each NPC maintains about rival strength, intent, territory, logistics, and credibility
-* define how delayed reports, rumors, doctrine, and personality update those beliefs
-* define compact personality dimensions for rulers such as caution, pride, paranoia, opportunism, and revenge
-* ensure NPCs act on believed world state rather than perfect truth
-* define how players can infer NPC tendencies indirectly through actions, timing, and diplomatic language
+#### `SYS-04` Runtime Capability Switch
 
-### Intelligence And Counterintelligence
+* `Outcome`: the product can run with AI disabled, simulated, or enabled without changing the surrounding gameplay code
+* `Scope`: define feature flags, provider boundaries, fallback behavior, and developer ergonomics for switching modes
+* `Done when`: the same feature can execute symbolically in tests and optionally use AI at runtime through the same public interface
+* `Dependencies`: `SYS-02`, `SYS-03`
 
-* define the first small set of deception and intelligence actions such as conceal intent, plant rumor, forge message, stage posture, and leak selected truth
-* define what makes a deception attempt plausible, what evidence it leaves behind, and how confidence is represented
-* define who receives deceptive information and how it propagates through reports and diplomacy
-* define how player-facing reports communicate uncertainty without becoming vague or useless
-* build example intelligence scenarios that test misinformation, partial truth, and conflicting interpretations
+#### `SYS-05` Symbolic Fixtures And Golden Outputs
 
-### Reports, Recaps, And Memory
+* `Outcome`: AI-adjacent systems have deterministic fixtures and expected outputs that do not require model calls
+* `Scope`: add golden fixtures for advisor summaries, diplomatic pigeons, recap entries, doctrine proposals, and candidate plans
+* `Done when`: the repo can regression-test these systems end-to-end in AI-off mode and then separately test AI enrichment as an optional layer
+* `Dependencies`: `SYS-02`, `SYS-04`
 
-* design report-generation prompts or templates for military, political, logistics, and narrative briefing styles
-* create a "what happened while you were away?" recap flow for asynchronous return sessions
-* define after-action summary generation that explains outcomes in terms of real causes from simulation history
-* define how world memory stores betrayals, famous defenses, humiliating retreats, decisive discoveries, and named characters
-* generate persistent mythic or historical language that reflects each empire's DNA and remembered events
+### Phase 1 Work Items: Advisor Surface And Opening Loop
 
-### Emergent Characters And Diplomacy
+#### `AO-01` Diplomatic Pigeons Inbox
 
-* define how admirals, governors, scouts, envoys, or intelligence chiefs emerge from actual game events
-* define what character traits and reputations are worth persisting
-* create diplomatic message generation that reflects faction identity, current leverage, and remembered history
-* create propaganda, memorial, and intercepted-message writing flows grounded in real events
+* `Outcome`: diplomatic pigeons appear as first-class advisor items rather than only implied stance summaries
+* `Scope`: add pigeon-specific item types, rendering, attribution, and inbox state in the advisor pane
+* `Done when`: a scenario can deliver at least one diplomatic pigeon with its sender, timing, and immediate strategic implication visible in the command table
+* `Dependencies`: current advisor feed and report attribution baseline
 
-### UI, Safety, And Validation
+#### `AO-02` Faction Voice For Diplomacy
 
-* define the validation layer for all AI-generated plans and messages before they affect gameplay state
-* define fallback behavior when the AI is uncertain, unavailable, or produces an invalid plan
-* ensure every AI-generated action can be inspected in structured form by the player
-* define logging and debugging tools so future developers can inspect prompts, inputs, outputs, and validation failures
-* define test fixtures and replay scenarios for advisor plans, recap generation, doctrine tone, and NPC belief updates
+* `Outcome`: diplomatic pigeons read with distinct faction voices such as threatening, conciliatory, opportunistic, or deceptive
+* `Symbolic baseline`: define a minimal tone-tag schema from current faction metadata and situational leverage, then render pigeons through deterministic phrase banks or templates
+* `AI overlay`: optionally paraphrase or deepen those same messages while preserving sender, intent, leverage, and tone tags
+* `Done when`: the same diplomatic event can render with materially different voice depending on faction metadata and leverage state even with AI disabled
+* `Dependencies`: `AO-01`, `SYS-02`
 
-### Open Questions
+#### `AO-03` Advisor Disagreement
 
-* should advisors primarily feel like interface helpers, political actors inside the empire, or a hybrid of both
-* how much of internal politics should be simulation versus presentation in the first implementation
-* how visible should doctrine be to the player and how hidden should doctrine remain for NPCs
-* how much ambiguity in intelligence reports is fun before it becomes frustrating
-* when should the game use a small fast model versus a stronger slower model
+* `Outcome`: multiple advisors can interpret the same report or pigeon differently
+* `Symbolic baseline`: add a shared source item with multiple advisor takes, using explicit heuristics, stances, and confidence rules even before deeper political blocs exist
+* `AI overlay`: optionally rewrite or sharpen the disagreement while staying within the same advisor positions and confidence bounds
+* `Done when`: at least one scenario reliably shows two advisors disagreeing about the same signal and the UI presents both readings side by side in AI-off mode
+* `Dependencies`: `AO-01`, `SYS-02`
+
+#### `AO-04` Causal Explanation Pass
+
+* `Outcome`: advisor analysis cites concrete causes such as pinned fleets, specific blockades, late probes, or stripped reserves
+* `Symbolic baseline`: derive a small explicit cause vocabulary from simulation history and thread it into report generation and templates
+* `AI overlay`: optionally turn those same causes into more natural prose without changing the underlying cited causes
+* `Done when`: battle and logistics reports cite real causal tags from simulation state rather than generic consequence text even with AI disabled
+* `Dependencies`: `SYS-02`, `SYS-03`
+
+#### `AO-05` Strategic Marking Callbacks
+
+* `Outcome`: reports and advisor notes explicitly reference the player's marked `explore`, `expand`, `threat`, `screen`, `economic_priority`, and `future_link` systems
+* `Symbolic baseline`: connect strategic markings into report ranking, wording, and follow-up prompts through deterministic matching rules
+* `AI overlay`: optionally improve phrasing or prioritization while honoring the same marked-system signals
+* `Done when`: a marked system receiving reinforcements, threat activity, or opportunity pressure is called out directly in the advisor surface in AI-off mode
+* `Dependencies`: `AO-04`
+
+#### `AO-06` After-Action Explanations
+
+* `Outcome`: battles, lost control, failed expansion, and successful screening generate stronger after-action explanation flows
+* `Symbolic baseline`: create structured event summaries for combat, capture, claim failure, and screening success plus deterministic explanation templates
+* `AI overlay`: optionally turn the same summaries into richer prose or different report styles
+* `Done when`: representative scenarios produce after-action summaries that explain what happened, why it happened, and what the player could have noticed earlier without requiring AI
+* `Dependencies`: `AO-04`, `SYS-03`
+
+#### `AO-07` Frontier Pocket Opening
+
+* `Outcome`: the player starts in a partially isolated apprenticeship pocket with legible nearby choices and delayed wider-galaxy context
+* `Scope`: author a starter scenario or generator profile with local rivals, delayed outside signals, and controllable first-contact pacing
+* `Done when`: the default opening produces a meaningful local expansion game before major distant entanglement
+* `Dependencies`: current starter scenario baseline
+
+#### `AO-08` Opening Economy And Lane Unlock
+
+* `Outcome`: home-system salt growth and outward starlane progression gradually connect the frontier pocket to the wider galaxy
+* `Scope`: implement the opening ramp rules plus any scenario data needed to stage the unlock
+* `Done when`: the opening has a measurable transition from local apprenticeship to wider operational exposure
+* `Dependencies`: `AO-07`
+
+#### `AO-09` Daily Opportunity Threat Lesson Guarantee
+
+* `Outcome`: the AI-heavy or single-player opening reliably surfaces at least one opportunity, one threat, and one lesson each day
+* `Symbolic baseline`: define heuristics for daily brief assembly and back them with scenarios that stress weak openings
+* `AI overlay`: optionally improve wording, condensation, and framing while preserving the selected three-beat structure
+* `Done when`: regression scenarios show the daily brief consistently contains all three beats without obvious filler in AI-off mode
+* `Dependencies`: `AO-05`, `AO-06`, `AO-07`
+
+#### `AO-10` Advisor Reliability Decision
+
+* `Outcome`: advisor reliability is either formalized as a visible mechanic or explicitly deferred
+* `Scope`: make a product decision, document the rule, and align the UI wording with that choice
+* `Done when`: there is no ambiguity in code or copy about whether reliability is mechanical, presentational, or postponed
+* `Dependencies`: `AO-03`
+
+### Phase 1 Foundation Contracts: AI Overlay
+
+#### `AI-01` Deterministic Truth Contract
+
+* `Outcome`: a hard contract defines what is simulation truth, what is delivered report fact, and what is generated interpretation
+* `Scope`: document the contract and shape the data passed into all AI-facing systems around it
+* `Done when`: every AI feature can point to a bounded input schema and an explicit rule against inventing hidden facts
+* `Dependencies`: `SYS-02`, `SYS-03`
+
+#### `AI-02` AI Visibility Contract
+
+* `Outcome`: each AI-facing subsystem has a defined visibility boundary for player knowledge versus hidden world truth
+* `Scope`: enumerate allowed inputs for advisors, diplomacy, recap, NPC reasoning, and debugging tools
+* `Done when`: there is a written matrix for what each subsystem may see and test fixtures cover at least one knowledge-boundary case
+* `Dependencies`: `SYS-02`, `AI-01`
+
+#### `AI-03` First Playable AI Scope
+
+* `Outcome`: phase 1 LLM features are explicitly scoped so implementation can proceed without reopening the whole vision each time
+* `Scope`: decide which existing symbolic systems receive AI enrichment first and which remain symbolic-only until later
+* `Done when`: the README identifies the first AI overlay targets rather than treating AI as the entry point for those systems
+* `Dependencies`: `SYS-04`, `AI-01`, `AI-02`
+
+#### `AI-04` Model Tier Matrix
+
+* `Outcome`: model usage is mapped to job type such as advisor interaction, summarization, NPC intent, and premium narrative writing
+* `Scope`: define speed, quality, and fallback expectations per job
+* `Done when`: developers can implement each AI overlay with a named tier and fallback path instead of ad hoc model choice
+* `Dependencies`: `SYS-04`, `AI-03`
+
+### Phase 2 Work Items: Empire Identity And Doctrine
+
+#### `ID-01` Empire Creation Flow
+
+* `Outcome`: the player can create an empire from structured frames like `House`, `Corporation`, `Republic`, `Cult`, `Dynasty`, or `League`
+* `Symbolic baseline`: build a non-AI creation flow using selectable frames, structured prompts, defaults, and review screens
+* `AI overlay`: optionally turn the same flow into a conversational refinement experience that still compiles into the same schema
+* `Done when`: a new empire can be created end-to-end and the resulting profile is visible before game start in AI-off mode
+* `Dependencies`: `SYS-02`
+
+#### `ID-02` Faction Profile Schema
+
+* `Outcome`: empire creation produces a structured faction profile reusable by advisors, reports, diplomacy, and recap systems
+* `Scope`: define schema fields, editable versus historical fields, and persistence format
+* `Done when`: faction identity lives in a canonical structure rather than scattered prompt fragments
+* `Dependencies`: `ID-01`
+
+#### `ID-03` Faction Voice Pack
+
+* `Outcome`: naming, tone, ceremony, slogans, and mythic language derive from the structured faction profile
+* `Symbolic baseline`: generate reusable voice assets from deterministic tables, profile fields, and template banks
+* `AI overlay`: optionally expand those assets into more varied prose while staying within the same voice constraints
+* `Done when`: multiple downstream systems can draw from the same faction voice pack and feel internally consistent even without AI
+* `Dependencies`: `ID-02`
+
+#### `DOC-01` Doctrine Loop
+
+* `Outcome`: doctrines can be proposed, accepted, revised, or ignored, and they influence advisor tone without hard-locking play
+* `Symbolic baseline`: define doctrine lifecycle, player interaction model, and internal representation for NPCs using explicit doctrine cards or proposals
+* `AI overlay`: optionally help propose, revise, or explain doctrines while preserving the same canonical doctrine objects
+* `Done when`: a doctrine can be introduced, reflected in advice, and observed in later recommendations or NPC behavior without requiring AI
+* `Dependencies`: `ID-02`, `POL-03`, `SYS-02`
+
+### Phase 2 Work Items: Politics, Belief, And Orders
+
+#### `POL-01` First Political Blocs
+
+* `Outcome`: the empire is mediated through initial blocs such as military hawks, trade guilds, frontier governors, intelligence bureau, and civic ideology
+* `Scope`: define bloc priorities, advisor mapping, and the first set of visible tensions
+* `Done when`: at least two advisors can disagree for recognizably political reasons instead of generic helper variance
+* `Dependencies`: `ID-02`
+
+#### `POL-02` Bloc Pressure Model
+
+* `Outcome`: bloc influence shifts over time based on victories, losses, expansion, shortages, and scandals
+* `Scope`: implement a simple pressure model and expose it through reports or council framing
+* `Done when`: repeated events measurably change which bloc has leverage and the player can see those shifts
+* `Dependencies`: `POL-01`
+
+#### `POL-03` NPC Belief State
+
+* `Outcome`: NPCs act on believed world state rather than perfect truth
+* `Scope`: define hidden belief fields for rival strength, intent, territory, logistics, credibility, and personality dimensions such as caution or paranoia
+* `Done when`: example NPC decisions can be explained from stored beliefs and delayed inputs rather than omniscient access
+* `Dependencies`: `AI-02`
+
+#### `POL-04` Intelligence And Deception
+
+* `Outcome`: the game supports a first small set of intelligence actions such as conceal intent, plant rumor, forge message, stage posture, and leak selected truth
+* `Scope`: define plausibility rules, evidence trails, uncertainty representation, and propagation targets
+* `Done when`: scenarios can demonstrate successful and failed deception with understandable player-facing evidence
+* `Dependencies`: `POL-03`
+
+#### `ORD-01` Advisor-Mediated Orders
+
+* `Outcome`: the player can express intent in natural language and receive structured candidate plans for review
+* `Scope`: add the input surface, planner pipeline, approval UX, ambiguity handling, and canonical reconstruction path
+* `Done when`: example intents like scouting, reinforcing, probing, fortifying, or drafting a diplomatic message can be translated into inspectable candidate plans without freeform auto-execution
+* `Dependencies`: manual command UI baseline, `SYS-02`, `SYS-03`, `AI-01`, `AI-02`, `AI-03`
+
+### Phase 3 Work Items: Reports, Memory, And World Texture
+
+#### `NAR-01` Return Session Recap
+
+* `Outcome`: players receive a "what happened while you were away?" recap grounded in real events
+* `Symbolic baseline`: define recap structure, selection rules, and deterministic summary templates
+* `AI overlay`: optionally improve condensation, tone, or narrative flow while preserving the same event selection
+* `Done when`: a returning session can summarize the last absence window with concrete event references and actionable follow-ups in AI-off mode
+* `Dependencies`: `AO-06`, `SYS-02`, `SYS-03`
+
+#### `NAR-02` World Memory Ledger
+
+* `Outcome`: the world stores remembered betrayals, famous defenses, humiliating retreats, decisive discoveries, and other enduring events
+* `Scope`: define memory schema, retention policy, and links to faction identity
+* `Done when`: later reports and diplomacy can cite remembered events from a canonical ledger
+* `Dependencies`: `ID-02`, `NAR-01`
+
+#### `NAR-03` Emergent Character Layer
+
+* `Outcome`: admirals, governors, scouts, envoys, and intelligence chiefs emerge from actual play events rather than pure fabrication
+* `Scope`: define which roles appear, what traits and reputations persist, and how events promote them into named figures
+* `Done when`: at least one role can emerge from play and appear consistently in later reporting
+* `Dependencies`: `NAR-02`
+
+#### `NAR-04` Event-Grounded Diplomacy And Myth
+
+* `Outcome`: diplomatic messages, propaganda, memorials, and intercepted chatter reflect faction identity, current leverage, and remembered history
+* `Symbolic baseline`: connect faction voice, world memory, and current state into reusable template-driven writing flows
+* `AI overlay`: optionally elaborate or personalize those same outputs without changing their factual grounding
+* `Done when`: generated text references real remembered events and current circumstances instead of generic flavor even when AI is disabled
+* `Dependencies`: `ID-03`, `NAR-02`, `NAR-03`, `SYS-03`
+
+### Cross-Cutting Quality Gates
+
+#### `OPS-01` Validation And Fallbacks
+
+* `Outcome`: all AI-generated plans and messages pass through validation before affecting gameplay state
+* `Scope`: define validators, structured inspections, and fallback behavior for invalid or unavailable AI results
+* `Done when`: invalid outputs fail safely, the player can inspect what was rejected, and the product falls back to the symbolic baseline
+* `Dependencies`: `SYS-03`, `SYS-04`, `AI-01`, `AI-02`
+
+#### `OPS-02` Prompt And Output Observability
+
+* `Outcome`: developers can inspect prompts, inputs, outputs, and validation failures for AI features
+* `Scope`: add logging, debugging views, and replay hooks for local development
+* `Done when`: a future coding agent can trace why an AI-facing feature produced a specific result without ad hoc instrumentation
+* `Dependencies`: `OPS-01`
+
+#### `OPS-03` Replay Fixtures
+
+* `Outcome`: the repo has stable replay scenarios and tests for advisor plans, recap generation, doctrine tone, and NPC belief updates
+* `Scope`: define fixture format and add representative scenario coverage
+* `Done when`: major AI-facing slices land with AI-off golden outputs plus optional enriched fixtures instead of one-off manual checks
+* `Dependencies`: `SYS-05`, `OPS-01`
+
+### Decision Backlog
+
+These are not implementation tasks, but each one should be resolved before the dependent work items are considered complete:
+
+* `DEC-01`: should advisors primarily feel like interface helpers, political actors inside the empire, or a hybrid
+* `DEC-02`: how much of internal politics should be simulation versus presentation in the first implementation
+* `DEC-03`: how visible doctrine should be to the player and how hidden doctrine should remain for NPCs
+* `DEC-04`: how much ambiguity in intelligence reports is fun before it becomes frustrating
+* `DEC-05`: when the game should use a small fast model versus a stronger slower model
