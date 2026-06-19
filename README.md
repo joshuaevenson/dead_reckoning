@@ -215,6 +215,42 @@ The game is designed so that wars are often decided before combat occurs, throug
     * delayed intelligence
 * There is no single authoritative “current state” from a player perspective.
 
+2.5 The game should teach through consequences
+
+* The player should usually learn from outcomes rather than from abstract tutorial text alone.
+* Reports, advisor notes, and after-action summaries should explain why something happened:
+    * which blockade cut a route
+    * which delayed probe left a frontier blind
+    * which pinned fleet created a losing battle
+* The game should help the player discover durable play styles such as:
+    * frontier expansion
+    * lane denial
+    * cautious turtling
+    * feint and turn
+    * probe-heavy screening
+
+2.6 The opening should function as an apprenticeship arc
+
+* Early play should happen in a legible local pocket where the player can make meaningful choices without immediate contact from powerful distant players.
+* The player should still receive delayed news from the wider galaxy so the broader world feels real and continuous.
+* The early game should emphasize:
+    * choosing first expansion targets
+    * deciding when to probe versus when to claim
+    * learning the value of starlanes, blockades, and information delay
+* The wider galaxy should become a direct operational concern only after the player has enough local strength and understanding to engage with it.
+
+2.7 Strategy should be explicit and legible
+
+* The player should be able to mark systems and regions with strategic intent so later advice and reports have context.
+* Initial strategic markings may include:
+    * `explore`
+    * `expand`
+    * `threat`
+    * `screen`
+    * `economic_priority`
+    * `future_link`
+* Advisor suggestions, diplomacy summaries, and report analysis should reference these markings directly.
+
 ⸻
 
 1. Core Gameplay Loop (Daily Interaction)
@@ -256,6 +292,83 @@ Step 4 — Strategic Adjustment
     * defense posture
     * expansion plans
     * intelligence priorities
+
+### Daily Brief Contract
+
+For the slow daily cadence to stay engaging, each real-world check-in should try to present:
+
+* one opportunity
+* one threat
+* one lesson
+
+Where possible:
+
+* the opportunity should tempt expansion, trade, reconnaissance, diplomacy, or a timing window
+* the threat should demand interpretation rather than merely announce damage
+* the lesson should connect a recent outcome to a clear cause
+
+In the single-player or AI-heavy opening, the game should deliberately aim to supply this pattern every day. In the long-run shared multiplayer world, this pattern may be less controllable, but the UI should still try to frame the player's current situation in these terms.
+
+### Council Advisors
+
+The player should not receive only one authoritative recommendation stream.
+
+Instead, the command layer should eventually support a small council of named advisors with different biases, such as:
+
+* military caution
+* aggressive expansion
+* intelligence and screening
+* logistical and economic discipline
+* diplomacy and signaling
+
+Important design rules:
+
+* advisors should explain consequences, not merely say what to click
+* advisors should often disagree in good faith
+* advisor reliability should vary by topic and circumstance
+* learning when to trust which advisor is itself a minor skill the player develops
+
+Conflicting advice is a feature, not a defect, as long as each advisor can explain the reasoning behind the recommendation.
+
+### Strategic Markings
+
+The player should be able to annotate the map with strategic priorities.
+
+These markings are not world truth. They are player intent and planning context.
+
+Initial uses:
+
+* mark a star as the next expansion objective
+* identify a dangerous frontier
+* flag a system as a screening anchor for probes or blockades
+* designate an economic backbone system
+* identify a future inter-cluster connection point
+
+These markings should improve later messaging. For example:
+
+* an advisor can say a marked `expand` target is now riskier because a rival can blockade the fast lane
+* a report can say a marked `threat` system just received reinforcements
+* a logistics note can say a marked `future_link` system is now the best outward starlane candidate
+
+### Diplomatic Pigeons
+
+Diplomatic messages from AI factions should be a regular part of the daily information flow.
+
+These messages may be:
+
+* friendly
+* threatening
+* deceptive
+* transactional
+* informative by accident
+
+Their purpose is not only flavor. They should also teach strategic patterns by surfacing:
+
+* blockade threats
+* frontier pressure
+* resource shortages
+* likely expansion routes
+* rival personality and doctrine
 
 ⸻
 
@@ -1817,3 +1930,46 @@ The intended opening is:
 4. Secure the second system
 5. Decide whether to fortify, trade, scout deeper, or expand again
 ```
+
+23.6 Frontier Pocket Start
+
+For the single-player or AI-first opening, a new player should usually begin inside a partially disconnected local cluster.
+
+This cluster should have:
+
+* enough nearby open systems to support several early decisions
+* enough AI neighbors to produce diplomacy, pressure, and play-style discovery
+* no immediate fast starlane path for a distant major power to overwhelm the player
+
+The design goal is not full isolation. The player should still exist inside the same galaxy and receive delayed information about distant wars, expansions, and diplomatic shifts. The pocket is meant to protect the learning arc, not to create a separate tutorial map.
+
+23.7 Home System Ramp
+
+Home systems may begin strong and continue to grow into their role as strategic anchors.
+
+One useful opening model is:
+
+* home stars begin with meaningful but not overwhelming salt output
+* home salt output ramps upward over time
+* this makes early expansion valuable without making the first few days feel starved
+* it also gives the player a natural sense that their civilization is maturing into a wider role
+
+If this model is used, the ramp should be predictable and legible so players can plan around it rather than discovering it by accident.
+
+23.8 Connecting To The Wider Galaxy
+
+The player's local cluster should eventually be able to connect more directly to broader galactic traffic.
+
+One intended midgame transition is:
+
+* identify a strategic outward-facing system
+* invest in a major starlane construction project
+* decide when the benefits of faster travel and trade outweigh the exposure to stronger rivals
+
+This connection moment should feel like graduation from local frontier politics into interstellar power politics.
+
+It is especially valuable because it lets the player:
+
+* learn early systems in a controlled environment
+* remain part of the living galaxy the entire time
+* choose when to invite greater danger in exchange for greater opportunity
