@@ -34,14 +34,24 @@ const ORDER_ACTIONS = [
 ];
 const WORKSPACE_VIEWS = [
   { key: "map", label: "Map", icon: "pi pi-globe" },
+  { key: "probes", label: "Probes", icon: "pi pi-search" },
+  { key: "operations", label: "Ship Ops", icon: "pi pi-send" },
   { key: "reports", label: "Reports", icon: "pi pi-megaphone" },
   { key: "production", label: "Production", icon: "pi pi-sliders-h" },
   { key: "notebook", label: "Notebook", icon: "pi pi-book" },
+];
+const PRODUCTION_LINE_FOCUS_OPTIONS = [
+  { label: "Build Ships", value: "ships" },
+  { label: "Build Probes", value: "probes" },
+  { label: "Build Defenses", value: "defenses" },
+  { label: "Build Shipyard", value: "shipyard" },
+  { label: "Idle", value: "idle" },
 ];
 const PRODUCTION_FOCUS_OPTIONS = [
   { label: "Build Ships", value: "ships" },
   { label: "Build Defenses", value: "defenses" },
   { label: "Build Probes", value: "probes" },
+  { label: "Build Shipyard", value: "shipyard" },
   { label: "Bank Salt", value: "bank_salt" },
   { label: "Bank Metals", value: "bank_metals" },
 ];
@@ -52,11 +62,20 @@ const PRODUCTION_POSTURE_OPTIONS = [
   { label: "Emergency", value: "emergency" },
 ];
 
+function defaultProductionLine(index) {
+  return {
+    id: `yard_${index}`,
+    focus: index === 1 ? "ships" : "idle",
+    quantity: index === 1 ? 1 : 0,
+  };
+}
+
 function defaultProductionPlan() {
   return {
     focus: "ships",
     quantity: 1,
     posture: "balanced",
+    lines: [defaultProductionLine(1)],
   };
 }
 
@@ -95,12 +114,72 @@ function formatMissionNarrative(mission) {
   }
 }
 
+function estimateTransitValue(value) {
+  const numericValue = Math.max(0, Number(value ?? 0));
+  if (numericValue === 0) {
+    return "0";
+  }
+
+  const step =
+    numericValue >= 20 ? 5
+    : numericValue >= 8 ? 2
+    : 1;
+  return formatNumber(Math.max(step, Math.round(numericValue / step) * step));
+}
+
+function formatTransitCargo(cargoSalt, metals, isEstimate) {
+  if (isEstimate) {
+    return `Estimated cargo: ~${estimateTransitValue(cargoSalt)} salt, ~${estimateTransitValue(metals)} metals.`;
+  }
+
+  return `Cargo: ${formatNumber(cargoSalt)} salt, ${formatNumber(metals)} metals.`;
+}
+
 function saltOutputForSystem(system) {
   if (system?.saltProfile && system.saltProfile in SALT_PROFILE_OUTPUT) {
     return SALT_PROFILE_OUTPUT[system.saltProfile];
   }
 
   return STAR_OUTPUT[system?.starType] ?? 0;
+}
+
+function inferShipyardCount(system) {
+  return Math.max(1, Math.min(4, Math.ceil((system?.infrastructure ?? 1) / 4)));
+}
+
+function normalizeProductionQuantity(focus, quantity) {
+  const minimum = focus === "idle" ? 0 : 1;
+  return Math.max(minimum, Number(quantity ?? minimum));
+}
+
+function normalizeProductionLines(lines, count, fallbackFocus = "ships", fallbackQuantity = 1) {
+  const nextLines = [];
+
+  for (let index = 1; index <= count; index += 1) {
+    const lineId = `yard_${index}`;
+    const existing = lines?.find((line) => line?.id === lineId) ?? null;
+    const focus = existing?.focus ?? (index === 1 ? fallbackFocus : "idle");
+    const quantity = existing?.quantity ?? (index === 1 ? fallbackQuantity : 0);
+    nextLines.push({
+      id: lineId,
+      focus,
+      quantity: normalizeProductionQuantity(focus, quantity),
+    });
+  }
+
+  return nextLines;
+}
+
+function productionLineSummary(focus, quantity) {
+  if (focus === "idle") {
+    return "Hold this yard in reserve.";
+  }
+
+  if (focus === "shipyard") {
+    return `${formatNumber(quantity)} shipyard expansion ${quantity === 1 ? "project" : "projects"} queued. Heavy metal draw.`;
+  }
+
+  return `${formatNumber(quantity)} ${titleCase(focus)} ${quantity === 1 ? "order" : "orders"} queued for this yard.`;
 }
 
 function formatStarlaneId(a, b) {
@@ -154,6 +233,33 @@ function cloneScenario(scenario) {
   }
 
   return JSON.parse(JSON.stringify(rawScenario));
+}
+
+function cloneReportItem(item) {
+  return {
+    id: item.id,
+    date: item.date,
+    kicker: item.kicker,
+    title: item.title,
+    summary: item.summary,
+    analysis: item.analysis,
+    tone: item.tone,
+  };
+}
+
+function sortReportsByDate(items) {
+  return [...items].sort((left, right) => {
+    const dateOrder = String(right.date ?? "").localeCompare(String(left.date ?? ""));
+    if (dateOrder !== 0) {
+      return dateOrder;
+    }
+
+    return String(left.title ?? "").localeCompare(String(right.title ?? ""));
+  });
+}
+
+function findActionDefinition(actionKey) {
+  return ORDER_ACTIONS.find((action) => action.key === actionKey) ?? null;
 }
 
 function hasValidPosition(system) {
@@ -279,8 +385,11 @@ export function createCommandState(options = {}) {
     planner: {
       speculation: "",
       productionBySystemId: {},
+      archivedReportsById: {},
+      followUpReportsById: {},
     },
     orderDraft: {
+      originSystemId: null,
       destinationId: null,
       ships: 3,
       anchorId: null,
@@ -326,13 +435,30 @@ export function createCommandState(options = {}) {
     })),
   );
 
+  function canSeeTransitFleet(fleet) {
+    if (!fleet) {
+      return false;
+    }
+    if (!currentSeat.value) {
+      return true;
+    }
+
+    return (
+      fleet.factionId === currentSeat.value.faction.id
+      || fleet.launchVisibleToOthers
+    );
+  }
+
   function fleetsAtSystem(systemId) {
     return fleetEntries.value.filter((fleet) => fleet.currentSystemId === systemId);
   }
 
   function inboundFleets(systemId) {
     return fleetEntries.value.filter(
-      (fleet) => !fleet.currentSystemId && fleet.destinationSystemId === systemId,
+      (fleet) =>
+        !fleet.currentSystemId
+        && fleet.destinationSystemId === systemId
+        && canSeeTransitFleet(fleet),
     );
   }
 
@@ -561,16 +687,61 @@ function effectiveMass(ships, cargoSalt, metals) {
     );
   });
 
+  const originOptions = computed(() =>
+    ownedSystems.value.map((system) => {
+      const snapshot = snapshotSystem(system.id);
+      return {
+        label: snapshot
+          ? `${system.name} · ${formatNumber(snapshot.saltStockpile)} salt · ${formatNumber(snapshot.probeStockpile ?? 0)} probes`
+          : system.name,
+        value: system.id,
+      };
+    }),
+  );
+
+  const activeFleetOriginSystemId = computed(() => {
+    return ui.orderDraft.originSystemId ?? null;
+  });
+
+  const activeFleetOrigin = computed(() => {
+    const systemId = activeFleetOriginSystemId.value;
+    if (!systemId) {
+      return null;
+    }
+
+    const system = systemsMap.value.get(systemId);
+    const snapshot = snapshotSystem(systemId);
+    if (!system || !snapshot) {
+      return null;
+    }
+
+    return { system, snapshot };
+  });
+
   const productionPlannerRows = computed(() =>
     ownedSystems.value.map((system) => {
       const snapshot = snapshotSystem(system.id);
       const storedPlan = ui.planner.productionBySystemId[system.id] ?? defaultProductionPlan();
+      const shipyardCount = inferShipyardCount(system);
+      const lines = normalizeProductionLines(
+        storedPlan.lines,
+        shipyardCount,
+        storedPlan.focus ?? "ships",
+        storedPlan.quantity ?? 1,
+      );
       return {
         systemId: system.id,
         systemName: system.name,
-        focus: storedPlan.focus ?? "ships",
-        quantity: storedPlan.quantity ?? 1,
+        focus: lines[0]?.focus ?? "ships",
+        quantity: lines[0]?.quantity ?? 1,
         posture: storedPlan.posture ?? "balanced",
+        shipyardCount,
+        infrastructure: system.infrastructure,
+        lines: lines.map((line, index) => ({
+          ...line,
+          yardLabel: `Shipyard ${index + 1}`,
+          summary: productionLineSummary(line.focus, line.quantity),
+        })),
         outputText: `${saltOutputForSystem(system)} salt + ${METAL_OUTPUT[system.metalRichness]} metal / year`,
         storesText: snapshot
           ? `${formatNumber(snapshot.saltStockpile)} salt · ${formatNumber(snapshot.metalStockpile)} metal · ${formatNumber(snapshot.probeStockpile ?? 0)} probes`
@@ -580,28 +751,32 @@ function effectiveMass(ships, cargoSalt, metals) {
   );
 
   const destinationOptions = computed(() => {
-    if (!selectedSystem.value || !world.scenario) {
+    if (!world.scenario) {
       return [];
     }
 
+    const originSystemId = activeFleetOriginSystemId.value;
     return world.scenario.systems
       .filter(
         (system) =>
-          system.id !== selectedSystem.value.system.id,
+          system.id !== originSystemId,
       )
       .map((system) => ({ label: system.name, value: system.id }));
   });
 
   const anchorOptions = computed(() => {
-    if (!selectedSystem.value) {
+    if (!world.scenario) {
       return [];
     }
 
-    return (world.scenario?.systems ?? [])
-      .filter(
-        (system) =>
-          system.id !== selectedSystem.value.system.id,
-      )
+    return world.scenario.systems
+      .filter((system) => {
+        if (ui.activeAction === "deploy_probe") {
+          return true;
+        }
+
+        return system.id !== selectedSystem.value?.system.id;
+      })
       .map((system) => ({
         label: system.name,
         value: system.id,
@@ -876,6 +1051,7 @@ function effectiveMass(ships, cargoSalt, metals) {
         || !fleet.destinationSystemId
         || !fleet.departureDate
         || !fleet.arrivalDate
+        || !canSeeTransitFleet(fleet)
       ) {
         continue;
       }
@@ -892,6 +1068,7 @@ function effectiveMass(ships, cargoSalt, metals) {
       }
       const factionName = translateFactionId(fleet.factionId);
       const destinationName = translateSystemId(fleet.destinationSystemId);
+      const isEstimate = currentSeat.value && fleet.factionId !== currentSeat.value.faction.id;
 
       let tone = "neutral";
       if (currentSeat.value) {
@@ -906,8 +1083,10 @@ function effectiveMass(ships, cargoSalt, metals) {
         ships: fleet.ships,
         tone,
         mission: fleet.mission,
-        label: `${fleet.ships}`,
-        detail: `${factionName} ${formatMissionNarrative(fleet.mission)} toward ${destinationName}, ETA ${formatTravelSpan(marker.etaDays)}.`,
+        label: isEstimate ? `~${estimateTransitValue(fleet.ships)}` : `${fleet.ships}`,
+        detail: isEstimate
+          ? `Estimated foreign transit from ${factionName} ${formatMissionNarrative(fleet.mission)} toward ${destinationName}. ${formatTransitCargo(fleet.cargoSalt, fleet.metals, true)} ETA ${formatTravelSpan(marker.etaDays)}.`
+          : `${factionName} ${formatMissionNarrative(fleet.mission)} toward ${destinationName}. ${formatTransitCargo(fleet.cargoSalt, fleet.metals, false)} ETA ${formatTravelSpan(marker.etaDays)}.`,
       });
     }
 
@@ -1120,6 +1299,25 @@ function effectiveMass(ships, cargoSalt, metals) {
     };
   }
 
+  function probeBadgeForSystem(systemId) {
+    const status = probeStatusForSystem(systemId);
+    if (status.status === "on_station") {
+      return {
+        label: "P",
+        tone: "on_station",
+        detail: status.label,
+      };
+    }
+    if (status.status === "in_transit") {
+      return {
+        label: "→",
+        tone: "in_transit",
+        detail: status.label,
+      };
+    }
+    return null;
+  }
+
   const selectedSystemProbeStatus = computed(() => {
     if (!selectedSystem.value) {
       return null;
@@ -1150,6 +1348,7 @@ function effectiveMass(ships, cargoSalt, metals) {
       items.push({
         probeId: probe.probeId,
         systemId: probe.anchorSystemId,
+        originSystemId: probe.originSystemId,
         label: translateSystemId(probe.anchorSystemId),
         status: onStation ? "on_station" : "in_transit",
         statusLabel: onStation
@@ -1174,6 +1373,7 @@ function effectiveMass(ships, cargoSalt, metals) {
       items.push({
         probeId: `pending:${pendingProbe.anchorSystemId}`,
         systemId: pendingProbe.anchorSystemId,
+        originSystemId: pendingProbe.originSystemId,
         label: translateSystemId(pendingProbe.anchorSystemId),
         status: "in_transit",
         statusLabel: etaDays !== null
@@ -1196,6 +1396,44 @@ function effectiveMass(ships, cargoSalt, metals) {
       inTransit: items.filter((item) => item.status === "in_transit").length,
       items,
     };
+  });
+
+  const probeCommandRows = computed(() => {
+    if (!currentSeat.value) {
+      return [];
+    }
+
+    return ownedSystems.value
+      .map((system) => {
+        const snapshot = snapshotSystem(system.id);
+        const outgoingTransit = reconSummary.value.items.filter(
+          (item) =>
+            item.originSystemId === system.id
+            && item.status === "in_transit",
+        ).length;
+        const localCoverage = reconSummary.value.items.filter(
+          (item) =>
+            item.systemId === system.id
+            && item.status === "on_station",
+        ).length;
+
+        return {
+          systemId: system.id,
+          systemName: system.name,
+          readyProbes: snapshot?.probeStockpile ?? 0,
+          saltStockpile: snapshot?.saltStockpile ?? 0,
+          outgoingTransit,
+          localCoverage,
+          launchCapable:
+            (snapshot?.probeStockpile ?? 0) >= 1
+            && (snapshot?.saltStockpile ?? 0) >= PROBE_COST_SALT,
+        };
+      })
+      .sort((left, right) =>
+        right.readyProbes - left.readyProbes
+        || right.saltStockpile - left.saltStockpile
+        || left.systemName.localeCompare(right.systemName),
+      );
   });
 
   const selectedSystemOverview = computed(() => {
@@ -1272,28 +1510,35 @@ function effectiveMass(ships, cargoSalt, metals) {
   });
 
   const commandRelay = computed(() => {
-    if (!selectedSystem.value || !selectedSystemFriendly.value || !currentSeat.value) {
+    if (!activeFleetOrigin.value || !currentSeat.value) {
       return null;
     }
 
     const homeSystemId = currentSeat.value.faction.homeSystemId;
-    if (selectedSystem.value.system.id === homeSystemId) {
+    if (activeFleetOrigin.value.system.id === homeSystemId) {
       return {
         title: "Local order",
         detail: "Command seat is already present at this system.",
       };
     }
 
-    const relayPlan = routePlan(homeSystemId, selectedSystem.value.system.id);
+    const relayPlan = routePlan(homeSystemId, activeFleetOrigin.value.system.id);
     return {
       title: "Courier order",
       detail: relayPlan
-        ? `1 pigeon from ${translateSystemId(homeSystemId)} to ${selectedSystem.value.system.name} (${formatTravelSpan(relayPlan.travelDays)}, 1 salt).`
-        : `1 pigeon from ${translateSystemId(homeSystemId)} to ${selectedSystem.value.system.name} (route unresolved).`,
+        ? `1 pigeon from ${translateSystemId(homeSystemId)} to ${activeFleetOrigin.value.system.name} (${formatTravelSpan(relayPlan.travelDays)}, 1 salt).`
+        : `1 pigeon from ${translateSystemId(homeSystemId)} to ${activeFleetOrigin.value.system.name} (route unresolved).`,
     };
   });
 
-  const feedItems = computed(() => {
+  const processedReportIds = computed(
+    () => new Set([
+      ...Object.keys(ui.planner.archivedReportsById ?? {}),
+      ...Object.keys(ui.planner.followUpReportsById ?? {}),
+    ]),
+  );
+
+  const rawFeedItems = computed(() => {
     if (!currentSeat.value || !world.result) {
       return [];
     }
@@ -1392,6 +1637,7 @@ function effectiveMass(ships, cargoSalt, metals) {
       .map((probe) => {
         const etaDays = diffDays(currentWorldDate.value, probe.arrivalDate);
         return {
+          id: `pending_probe:${probe.anchorSystemId}:${probe.submittedAt}`,
           date: probe.submittedAt,
           kicker: "Recon launched",
           title: `${translateFactionId(probe.factionId)} dispatched a probe toward ${translateSystemId(probe.anchorSystemId)}`,
@@ -1432,6 +1678,9 @@ function effectiveMass(ships, cargoSalt, metals) {
       const launchMatch = detail.match(/^(\w+) launched (\S+) from (\S+) to (\S+)$/u);
       if (launchMatch) {
         const fleet = firstFleetSnapshot(launchMatch[2], parsed.date);
+        if (!canSeeTransitFleet(fleet)) {
+          continue;
+        }
         const plan = routePlan(launchMatch[3], launchMatch[4]);
         const launchClassification = classifyLaunch(
           launchMatch[1],
@@ -1439,11 +1688,15 @@ function effectiveMass(ships, cargoSalt, metals) {
           fleet?.mission ?? null,
           parsed.date,
         );
+        const estimatedShips = fleet ? estimateTransitValue(fleet.ships) : "?";
+        const exactShips = fleet?.ships ?? "?";
+        const seatLaunch = fleet?.factionId === currentSeat.value.faction.id;
         item = {
+          id: `log:${parsed.date}:${detail}`,
           date: parsed.date,
           kicker: launchClassification.kicker,
-          title: `${translateFactionId(launchMatch[1])} launched ${fleet?.ships ?? "?"} ships toward ${translateSystemId(launchMatch[4])}`,
-          summary: `${translateFactionId(launchMatch[1])} departed ${translateSystemId(launchMatch[3])} for ${translateSystemId(launchMatch[4])}. Expected arrival in ${formatTravelSpan(plan?.travelDays ?? 0)}.`,
+          title: `${translateFactionId(launchMatch[1])} launched ${seatLaunch ? exactShips : `an estimated ${estimatedShips}`} ships toward ${translateSystemId(launchMatch[4])}`,
+          summary: `${translateFactionId(launchMatch[1])} departed ${translateSystemId(launchMatch[3])} for ${translateSystemId(launchMatch[4])}. ${seatLaunch ? "Expected arrival" : "Estimated arrival"} in ${formatTravelSpan(plan?.travelDays ?? 0)}.`,
           analysis: launchClassification.analysis,
           tone:
             launchMatch[4] === currentSeat.value.faction.homeSystemId || relevantSystemIds.has(launchMatch[4])
@@ -1459,16 +1712,17 @@ function effectiveMass(ships, cargoSalt, metals) {
         const probe = firstProbeSnapshot(probeLaunchMatch[2], parsed.date);
         const plan = routePlan(probeLaunchMatch[3], probeLaunchMatch[4]);
         const seatLaunch = probeLaunchMatch[1] === currentSeat.value.faction.id;
-        const watchesSeat = relevantSystemIds.has(probeLaunchMatch[4]);
+        if (!seatLaunch) {
+          continue;
+        }
         item = {
+          id: `log:${parsed.date}:${detail}`,
           date: parsed.date,
-          kicker: seatLaunch ? "Recon launched" : "Foreign recon",
+          kicker: "Recon launched",
           title: `${translateFactionId(probeLaunchMatch[1])} dispatched a probe toward ${translateSystemId(probeLaunchMatch[4])}`,
           summary: `${translateSystemId(probeLaunchMatch[3])} launched a probe toward ${translateSystemId(probeLaunchMatch[4])}. Expected arrival in ${formatTravelSpan(plan?.travelDays ?? 0)}.`,
-          analysis: seatLaunch
-            ? "When it arrives, exact local defense, ships, and stores will become visible for that system."
-            : `${translateFactionId(probeLaunchMatch[1])} is trying to reduce uncertainty around ${translateSystemId(probeLaunchMatch[4])}.`,
-          tone: watchesSeat && !seatLaunch ? "warn" : "info",
+          analysis: "When it arrives, exact local defense, ships, and stores will become visible for that system.",
+          tone: "info",
         };
         if (probe?.status === "deployed") {
           item.analysis = `${translateFactionId(probeLaunchMatch[1])} already has exact local visibility there.`;
@@ -1479,17 +1733,17 @@ function effectiveMass(ships, cargoSalt, metals) {
       if (!item && probeArrivalMatch) {
         const probe = firstProbeSnapshot(probeArrivalMatch[1], parsed.date);
         const seatProbe = probe?.factionId === currentSeat.value.faction.id;
+        if (!seatProbe) {
+          continue;
+        }
         item = {
+          id: `log:${parsed.date}:${detail}`,
           date: parsed.date,
-          kicker: seatProbe ? "Recon on station" : "Probe contact",
+          kicker: "Recon on station",
           title: `Probe established at ${translateSystemId(probeArrivalMatch[2])}`,
-          summary: seatProbe
-            ? `A friendly probe is now reporting exact local conditions from ${translateSystemId(probeArrivalMatch[2])}.`
-            : `A foreign probe reached ${translateSystemId(probeArrivalMatch[2])}.`,
-          analysis: seatProbe
-            ? "The system card now reflects live local defense, ships, and stores from the probe."
-            : "Foreign reconnaissance narrows uncertainty before fleets move.",
-          tone: seatProbe ? "success" : "warn",
+          summary: `A friendly probe is now reporting exact local conditions from ${translateSystemId(probeArrivalMatch[2])}.`,
+          analysis: "The system card now reflects live local defense, ships, and stores from the probe.",
+          tone: "success",
         };
       }
 
@@ -1509,6 +1763,7 @@ function effectiveMass(ships, cargoSalt, metals) {
           analysis = `${translateFactionId(combatMatch[2])} damaged the defense and may follow with a capture attempt.`;
         }
         item = {
+          id: `log:${parsed.date}:${detail}`,
           date: parsed.date,
           kicker: "Battle report",
           title: `Fighting at ${translateSystemId(combatMatch[1])}`,
@@ -1521,6 +1776,7 @@ function effectiveMass(ships, cargoSalt, metals) {
       const captureMatch = detail.match(/^(\w+) captured (\S+)$/u);
       if (!item && captureMatch) {
         item = {
+          id: `log:${parsed.date}:${detail}`,
           date: parsed.date,
           kicker: "Control shift",
           title: `${translateSystemId(captureMatch[2])} changed hands`,
@@ -1536,6 +1792,7 @@ function effectiveMass(ships, cargoSalt, metals) {
       const claimMatch = detail.match(/^(\w+) claimed open system (\S+)$/u);
       if (!item && claimMatch) {
         item = {
+          id: `log:${parsed.date}:${detail}`,
           date: parsed.date,
           kicker: "Frontier claim",
           title: `${translateFactionId(claimMatch[1])} secured ${translateSystemId(claimMatch[2])}`,
@@ -1549,11 +1806,21 @@ function effectiveMass(ships, cargoSalt, metals) {
       if (!item && arrivalMatch) {
         const fleet = firstFleetSnapshot(arrivalMatch[1], parsed.date);
         const destinationView = systemViewAt(arrivalMatch[2], parsed.date);
+        if (
+          !fleet
+          || (
+            !canSeeTransitFleet(fleet)
+            && destinationView?.ownerId !== currentSeat.value.faction.id
+          )
+        ) {
+          continue;
+        }
         const isHostileArrival =
           fleet?.factionId &&
           destinationView?.ownerId &&
           fleet.factionId !== destinationView.ownerId;
         item = {
+          id: `log:${parsed.date}:${detail}`,
           date: parsed.date,
           kicker: "Arrival burn",
           title: `${translateSystemId(arrivalMatch[2])} received ${fleet?.ships ?? "?"} ships`,
@@ -1570,38 +1837,51 @@ function effectiveMass(ships, cargoSalt, metals) {
       }
 
       items.push(item);
-      if (items.length >= 12) {
+      if (items.length >= 60) {
         break;
       }
     }
 
     const combined = [...pendingProbeItems, ...items];
-    return combined.slice(0, 12);
+    return combined.slice(0, 60);
   });
 
+  const feedItems = computed(() =>
+    rawFeedItems.value
+      .filter((item) => !processedReportIds.value.has(item.id))
+      .slice(0, 12),
+  );
+
+  const archivedReportItems = computed(() =>
+    sortReportsByDate(Object.values(ui.planner.archivedReportsById ?? {})),
+  );
+
+  const notebookTodoItems = computed(() =>
+    sortReportsByDate(Object.values(ui.planner.followUpReportsById ?? {})),
+  );
+
   const orderBrief = computed(() => {
-    if (!selectedSystem.value || !currentSeat.value) {
+    if (!currentSeat.value) {
       return {
         title: "Orders Await Context",
-        lines: ["Select a friendly system to preview an order."],
+        lines: ["Choose a faction seat before issuing orders."],
       };
     }
 
-    if (!selectedSystemFriendly.value) {
-      return {
-        title: "Observation Only",
-        lines: ["This system is not under your control, so it cannot originate orders."],
-      };
-    }
-
-    const system = selectedSystem.value.system;
-    const snapshot = selectedSystem.value.snapshot;
     const destinationId = ui.orderDraft.destinationId ?? destinationOptions.value[0]?.value ?? null;
     const destinationName = destinationId ? translateSystemId(destinationId) : "No destination";
-    const plan = destinationId ? routePlan(system.id, destinationId) : null;
     const relayLine = commandRelay.value ? `${commandRelay.value.title}: ${commandRelay.value.detail}` : null;
 
     if (ui.activeAction === "attack" || ui.activeAction === "reinforce" || ui.activeAction === "blockade") {
+      const origin = activeFleetOrigin.value;
+      if (!origin) {
+        return {
+          title: "Choose An Origin",
+          lines: ["Use the Origin field to choose a friendly system before launching ships."],
+        };
+      }
+
+      const plan = destinationId ? routePlan(origin.system.id, destinationId) : null;
       const ships = Number(ui.orderDraft.ships || 1);
       const burn = plan ? requiredBurnSalt(ships, 0, 0, plan.distance) : null;
       const title =
@@ -1624,7 +1904,7 @@ function effectiveMass(ships, cargoSalt, metals) {
           `Transit estimate: ${plan ? formatTravelSpan(plan.travelDays) : "No route"}`,
           `Projected burn cost: ${burn !== null ? `${burn} salt` : "Route required"}`,
           burn !== null
-            ? `Post-launch local salt: ${Math.max(0, snapshot.saltStockpile - burn)}`
+            ? `Post-launch local salt: ${Math.max(0, origin.snapshot.saltStockpile - burn)}`
             : "Post-launch local salt: unresolved until a route exists.",
           ui.activeAction === "blockade"
             ? "Blockading fleets can trigger interception penalties against enemies using adjacent starlanes."
@@ -1635,6 +1915,15 @@ function effectiveMass(ships, cargoSalt, metals) {
     }
 
     if (ui.activeAction === "resupply") {
+      const origin = activeFleetOrigin.value;
+      if (!origin) {
+        return {
+          title: "Choose An Origin",
+          lines: ["Use the Origin field to choose a friendly system before sending supplies."],
+        };
+      }
+
+      const plan = destinationId ? routePlan(origin.system.id, destinationId) : null;
       const ships = Number(ui.orderDraft.ships || 1);
       const burn = plan ? requiredBurnSalt(ships, 0, 0, plan.distance) : null;
       return {
@@ -1651,18 +1940,33 @@ function effectiveMass(ships, cargoSalt, metals) {
     }
 
     if (ui.activeAction === "deploy_probe") {
-      const anchorId = ui.orderDraft.anchorId ?? system.id;
-      const originSystemId = ui.orderDraft.probeOriginId ?? system.id;
+      const anchorId = ui.orderDraft.anchorId ?? selectedSystem.value?.system.id ?? anchorOptions.value[0]?.value ?? null;
+      if (!anchorId) {
+        return {
+          title: "Choose A Probe Target",
+          lines: ["Select an anchor system before dispatching reconnaissance."],
+        };
+      }
+
+      const originSystemId = ui.orderDraft.probeOriginId ?? null;
+      if (!originSystemId) {
+        return {
+          title: "Choose An Origin",
+          lines: ["Select a friendly origin with salt and a ready probe to launch reconnaissance."],
+        };
+      }
+
       const anchorPlan = routePlan(originSystemId, anchorId);
       const probeStatus = probeStatusForSystem(anchorId);
       return {
         title: "Probe Mission",
         lines: [
+          `Target: ${translateSystemId(anchorId)}`,
           `Origin: ${translateSystemId(originSystemId)}`,
-          `Anchor: ${translateSystemId(anchorId)}`,
           `Estimated arrival: ${formatTravelSpan(anchorPlan?.travelDays ?? 0)}`,
           `Cost: ${PROBE_COST_SALT} salt`,
           "Requires: 1 ready probe in origin stores",
+          "Dispatch from this dock to launch the probe immediately.",
           probeStatus.status === "in_transit"
             ? probeStatus.label
             : "Probes narrow uncertainty around approach lanes and turns.",
@@ -1671,35 +1975,28 @@ function effectiveMass(ships, cargoSalt, metals) {
       };
     }
 
+    const origin = activeFleetOrigin.value;
+    if (!origin) {
+      return {
+        title: "Choose An Origin",
+        lines: ["Use the Origin field to choose a friendly system before assigning trade."],
+      };
+    }
+
+    const plan = destinationId ? routePlan(origin.system.id, destinationId) : null;
     return {
       title: "Trade Run",
       lines: [
-        `${system.name} to ${destinationName}`,
+        `${origin.system.name} to ${destinationName}`,
         `Cargo priority: ${titleCase(ui.orderDraft.tradeFocus)}`,
         `Transit estimate: ${plan ? formatTravelSpan(plan.travelDays) : "No route"}`,
-        `Local production: ${saltOutputForSystem(system)} salt / ${METAL_OUTPUT[system.metalRichness]} metals per year`,
+        `Local production: ${saltOutputForSystem(origin.system)} salt / ${METAL_OUTPUT[origin.system.metalRichness]} metals per year`,
         relayLine,
       ].filter(Boolean),
     };
   });
 
   const orderSubmission = computed(() => {
-    if (!selectedSystem.value) {
-      return {
-        label: "Select a system",
-        disabled: true,
-        reason: "Pick a star on the map before issuing orders.",
-      };
-    }
-
-    if (!selectedSystemFriendly.value) {
-      return {
-        label: "Observation only",
-        disabled: true,
-        reason: "Only friendly systems can originate orders from the dock.",
-      };
-    }
-
     if (api.submitting) {
       return {
         label: "Transmitting...",
@@ -1718,7 +2015,7 @@ function effectiveMass(ships, cargoSalt, metals) {
         };
       }
 
-      const originSystemId = ui.orderDraft.probeOriginId ?? selectedSystem.value.system.id;
+      const originSystemId = ui.orderDraft.probeOriginId ?? null;
       const originSnapshot = snapshotSystem(originSystemId);
       if (!originSnapshot) {
         return {
@@ -1760,7 +2057,16 @@ function effectiveMass(ships, cargoSalt, metals) {
       return {
         label: "Dispatch Probe",
         disabled: false,
-        reason: `Spend ${PROBE_COST_SALT} salt from ${translateSystemId(originSystemId)} and commit 1 ready probe to establish exact local intelligence.`,
+        reason: `Execute the launch from this dock: spend ${PROBE_COST_SALT} salt from ${translateSystemId(originSystemId)} and commit 1 ready probe to establish exact local intelligence.`,
+      };
+    }
+
+    const origin = activeFleetOrigin.value;
+    if (!origin) {
+      return {
+        label: "Choose origin",
+        disabled: true,
+        reason: "Choose a friendly origin system in the dock to execute this order.",
       };
     }
 
@@ -1773,7 +2079,7 @@ function effectiveMass(ships, cargoSalt, metals) {
       };
     }
 
-    const plan = routePlan(selectedSystem.value.system.id, destinationId);
+    const plan = routePlan(origin.system.id, destinationId);
     if (!plan) {
       return {
         label: "No route",
@@ -1794,7 +2100,7 @@ function effectiveMass(ships, cargoSalt, metals) {
               ? "Send Resupply"
               : "Dispatch Trade Run",
       disabled: false,
-      reason: "Transmit the order and update the working world state immediately.",
+      reason: "Execute this order from the dock and update the working world state immediately.",
     };
   });
 
@@ -1811,6 +2117,8 @@ function effectiveMass(ships, cargoSalt, metals) {
         ui.plannerLoadedKey = null;
         ui.planner.speculation = "";
         ui.planner.productionBySystemId = {};
+        ui.planner.archivedReportsById = {};
+        ui.planner.followUpReportsById = {};
         return;
       }
 
@@ -1830,6 +2138,14 @@ function effectiveMass(ships, cargoSalt, metals) {
         nextState?.productionBySystemId && typeof nextState.productionBySystemId === "object"
           ? nextState.productionBySystemId
           : {};
+      ui.planner.archivedReportsById =
+        nextState?.archivedReportsById && typeof nextState.archivedReportsById === "object"
+          ? nextState.archivedReportsById
+          : {};
+      ui.planner.followUpReportsById =
+        nextState?.followUpReportsById && typeof nextState.followUpReportsById === "object"
+          ? nextState.followUpReportsById
+          : {};
     },
     { immediate: true },
   );
@@ -1838,6 +2154,8 @@ function effectiveMass(ships, cargoSalt, metals) {
     () => plannerStorageKey.value ? JSON.stringify({
       speculation: ui.planner.speculation,
       productionBySystemId: ui.planner.productionBySystemId,
+      archivedReportsById: ui.planner.archivedReportsById,
+      followUpReportsById: ui.planner.followUpReportsById,
     }) : null,
     (serialized) => {
       const key = plannerStorageKey.value;
@@ -1859,6 +2177,17 @@ function effectiveMass(ships, cargoSalt, metals) {
     }
   });
 
+  watch(originOptions, (options) => {
+    if (options.length === 0) {
+      ui.orderDraft.originSystemId = null;
+      return;
+    }
+
+    if (!options.some((option) => option.value === ui.orderDraft.originSystemId)) {
+      ui.orderDraft.originSystemId = null;
+    }
+  });
+
   watch(probeOriginOptions, (options) => {
     if (options.length === 0) {
       ui.orderDraft.probeOriginId = null;
@@ -1876,13 +2205,49 @@ function effectiveMass(ships, cargoSalt, metals) {
   watch(
     () => ui.selectedSystemId,
     (systemId) => {
-      if (ui.activeAction !== "deploy_probe" || !systemId || !currentSeat.value) {
+      if (!currentSeat.value) {
+        return;
+      }
+
+      if (ui.activeAction === "deploy_probe") {
+        if (!systemId) {
+          return;
+        }
+
+        const snapshot = snapshotSystem(systemId);
+        if (snapshot?.ownerId === currentSeat.value.faction.id) {
+          ui.orderDraft.probeOriginId = systemId;
+        }
+        return;
+      }
+
+      if (!systemId) {
+        ui.orderDraft.originSystemId = null;
         return;
       }
 
       const snapshot = snapshotSystem(systemId);
       if (snapshot?.ownerId === currentSeat.value.faction.id) {
-        ui.orderDraft.probeOriginId = systemId;
+        ui.orderDraft.originSystemId = systemId;
+      }
+    },
+  );
+
+  watch(
+    () => ui.activeAction,
+    () => {
+      if (!currentSeat.value || ui.activeAction === "deploy_probe") {
+        return;
+      }
+
+      const systemId = ui.selectedSystemId;
+      if (!systemId) {
+        return;
+      }
+
+      const snapshot = snapshotSystem(systemId);
+      if (snapshot?.ownerId === currentSeat.value.faction.id) {
+        ui.orderDraft.originSystemId = systemId;
       }
     },
   );
@@ -1997,14 +2362,14 @@ function effectiveMass(ships, cargoSalt, metals) {
   }
 
   function buildFleetCommand(mission) {
-    if (!currentSeat.value || !selectedSystem.value) {
+    if (!currentSeat.value) {
       throw new Error("Select a friendly origin system first.");
     }
 
     const at = currentCommandDate();
-    const originSystemId = selectedSystem.value.system.id;
+    const originSystemId = activeFleetOriginSystemId.value;
     const destinationSystemId = ui.orderDraft.destinationId ?? destinationOptions.value[0]?.value ?? null;
-    if (!at || !destinationSystemId) {
+    if (!at || !originSystemId || !destinationSystemId) {
       throw new Error("Choose a destination before sending a fleet.");
     }
 
@@ -2148,12 +2513,13 @@ function effectiveMass(ships, cargoSalt, metals) {
       targetSystemId,
       () => {
         recordPendingProbeOrder(origin.systemId, targetSystemId);
+        ui.activeWorkspace = "probes";
       },
     );
   }
 
   async function submitActiveOrder() {
-    if (!currentSeat.value || !selectedSystem.value) {
+    if (!currentSeat.value) {
       return;
     }
 
@@ -2166,7 +2532,7 @@ function effectiveMass(ships, cargoSalt, metals) {
         return;
       }
 
-      const originSystemId = ui.orderDraft.probeOriginId ?? selectedSystem.value.system.id;
+      const originSystemId = ui.orderDraft.probeOriginId ?? null;
       const command = buildProbeCommand({
         originSystemId,
         anchorSystemId,
@@ -2177,6 +2543,7 @@ function effectiveMass(ships, cargoSalt, metals) {
         anchorSystemId,
         () => {
           recordPendingProbeOrder(originSystemId, anchorSystemId);
+          ui.activeWorkspace = "probes";
         },
       );
       return;
@@ -2196,7 +2563,7 @@ function effectiveMass(ships, cargoSalt, metals) {
     await submitScenarioCommand(
       command,
       `${titleCase(ui.activeAction)} order transmitted`,
-      selectedSystem.value.system.id,
+      activeFleetOriginSystemId.value ?? selectedSystem.value?.system.id ?? null,
     );
   }
 
@@ -2223,18 +2590,307 @@ function effectiveMass(ships, cargoSalt, metals) {
     }
 
     const origin = nearestFriendlyOrigin(targetSystemId)?.systemId ?? currentSeat.value.faction.homeSystemId;
+    api.error = "";
+    api.tone = "info";
+    api.status = `Probe draft ready for ${translateSystemId(targetSystemId)}`;
     ui.activeWorkspace = "map";
     ui.activeAction = "deploy_probe";
     ui.orderDraft.anchorId = targetSystemId;
     ui.orderDraft.probeOriginId = origin;
-    selectSystem(origin);
+    selectSystem(targetSystemId);
   }
 
   function setProbeOriginSystemId(systemId) {
     ui.orderDraft.probeOriginId = systemId;
-    if (systemId) {
-      selectSystem(systemId);
+  }
+
+  function actionLabel(actionKey = ui.activeAction) {
+    return findActionDefinition(actionKey)?.label ?? titleCase(actionKey);
+  }
+
+  function missionForAction(actionKey = ui.activeAction) {
+    switch (actionKey) {
+      case "attack":
+      case "reinforce":
+      case "blockade":
+      case "resupply":
+      case "trade":
+        return actionKey;
+      default:
+        return null;
     }
+  }
+
+  const actionUnderway = computed(() => {
+    if (!currentSeat.value) {
+      return {
+        title: "No command seat selected",
+        summary: "Choose a faction seat before drafting or reviewing operations.",
+        items: [],
+      };
+    }
+
+    if (ui.activeAction === "deploy_probe") {
+      const anchorSystemId = ui.orderDraft.anchorId ?? selectedSystem.value?.system.id ?? null;
+      if (!anchorSystemId) {
+        return {
+          title: "No probe target selected",
+          summary: "Select a system to see whether reconnaissance is already assigned there.",
+          items: [],
+        };
+      }
+
+      const matchingItems = reconSummary.value.items
+        .filter((item) => item.systemId === anchorSystemId)
+        .map((item) => ({
+          key: item.probeId,
+          title: item.status === "on_station" ? "Probe on station" : "Probe already en route",
+          detail:
+            item.status === "on_station"
+              ? `${translateSystemId(anchorSystemId)} already has live local intelligence.`
+              : `${item.originSystemId ? translateSystemId(item.originSystemId) : "A friendly system"} already launched a probe here. ${item.statusLabel}.`,
+        }));
+
+      if (matchingItems.length === 0) {
+        return {
+          title: "No probe mission underway",
+          summary: `No friendly probe is currently assigned to ${translateSystemId(anchorSystemId)}.`,
+          items: [],
+        };
+      }
+
+      return {
+        title: matchingItems.length === 1 ? "1 probe mission already assigned" : `${matchingItems.length} probe missions already assigned`,
+        summary: `Reconnaissance is already covering ${translateSystemId(anchorSystemId)} or on the way there.`,
+        items: matchingItems,
+      };
+    }
+
+    const originSystemId = activeFleetOriginSystemId.value;
+    const mission = missionForAction();
+    if (!originSystemId || !mission) {
+      return {
+        title: "No action context yet",
+        summary: "Choose an origin system and action to review matching operations already underway.",
+        items: [],
+      };
+    }
+
+    const matchingFleets = fleetEntries.value
+      .filter((fleet) => {
+        if (fleet.factionId !== currentSeat.value.faction.id || fleet.mission !== mission) {
+          return false;
+        }
+
+        if (ui.activeAction === "blockade") {
+          return fleet.originSystemId === originSystemId;
+        }
+
+        return fleet.originSystemId === originSystemId && fleet.status === "transit";
+      })
+      .sort((left, right) =>
+        String(left.arrivalDate ?? "").localeCompare(String(right.arrivalDate ?? ""))
+        || String(left.destinationSystemId ?? "").localeCompare(String(right.destinationSystemId ?? ""))
+        || left.fleetId.localeCompare(right.fleetId),
+      );
+
+    const items = matchingFleets.slice(0, 5).map((fleet) => {
+      if (fleet.status === "stationed" && ui.activeAction === "blockade") {
+        return {
+          key: fleet.fleetId,
+          title: `${fleet.ships} ships holding ${translateSystemId(fleet.currentSystemId ?? fleet.destinationSystemId ?? originSystemId)}`,
+          detail: `This blockade force has already arrived and is screening connected starlanes.`,
+        };
+      }
+
+      const etaDays = diffDays(currentWorldDate.value, fleet.arrivalDate);
+      return {
+        key: fleet.fleetId,
+        title: `${fleet.ships} ships toward ${translateSystemId(fleet.destinationSystemId ?? "unknown")}`,
+        detail: `Mission already underway${etaDays !== null ? `, ETA ${formatTravelSpan(etaDays)}` : ""}.`,
+      };
+    });
+
+    if (matchingFleets.length === 0) {
+      return {
+        title: `No ${actionLabel().toLowerCase()} missions underway`,
+        summary: `${translateSystemId(originSystemId)} is not currently executing this action.`,
+        items: [],
+      };
+    }
+
+    return {
+      title: matchingFleets.length === 1 ? "1 mission already underway" : `${matchingFleets.length} missions already underway`,
+      summary: `${translateSystemId(originSystemId)} already has matching ${actionLabel().toLowerCase()} orders in motion.`,
+      items,
+    };
+  });
+
+  const shipOperationRows = computed(() => {
+    if (!currentSeat.value) {
+      return [];
+    }
+
+    const focusMission = missionForAction();
+
+    return fleetEntries.value
+      .filter((fleet) =>
+        fleet.factionId === currentSeat.value.faction.id
+        && (
+          fleet.status === "transit"
+          || (fleet.mission === "blockade" && fleet.status === "stationed")
+        ),
+      )
+      .map((fleet) => {
+        const inTransit = fleet.status === "transit";
+        const originSystemId = fleet.originSystemId ?? fleet.currentSystemId ?? null;
+        const mapSystemId = inTransit
+          ? fleet.destinationSystemId ?? originSystemId
+          : fleet.currentSystemId ?? fleet.destinationSystemId ?? originSystemId;
+        const etaDays = inTransit ? diffDays(currentWorldDate.value, fleet.arrivalDate) : null;
+        const focus = focusMission !== null && fleet.mission === focusMission;
+        const missionLabel = titleCase(fleet.mission);
+        const locationName = translateSystemId(mapSystemId ?? "unknown");
+        const originName = translateSystemId(originSystemId ?? "unknown");
+
+        return {
+          fleetId: fleet.fleetId,
+          mission: fleet.mission,
+          missionLabel,
+          status: inTransit ? "transit" : "on_station",
+          statusLabel: inTransit
+            ? etaDays !== null
+              ? `Arrives in ${formatTravelSpan(etaDays)}`
+              : "En route"
+            : "On station",
+          ships: fleet.ships,
+          originSystemId,
+          originName,
+          destinationSystemId: fleet.destinationSystemId ?? null,
+          destinationName: fleet.destinationSystemId ? translateSystemId(fleet.destinationSystemId) : null,
+          mapSystemId,
+          title: inTransit
+            ? `${fleet.ships} ships toward ${locationName}`
+            : `${fleet.ships} ships holding ${locationName}`,
+          detail: inTransit
+            ? `${originName} launched this ${fleet.mission} mission toward ${locationName}. ${formatTransitCargo(fleet.cargoSalt, fleet.metals, false)}`
+            : `${locationName} is under active blockade coverage from this force. ${formatTransitCargo(fleet.cargoSalt, fleet.metals, false)}`,
+          focus,
+        };
+      })
+      .sort((left, right) =>
+        Number(right.focus) - Number(left.focus)
+        || Number(left.status !== "transit") - Number(right.status !== "transit")
+        || right.ships - left.ships
+        || left.title.localeCompare(right.title),
+      );
+  });
+
+  const shipOperationSummary = computed(() => {
+    const rows = shipOperationRows.value;
+    const byMission = ORDER_ACTIONS
+      .filter((action) => action.key !== "deploy_probe")
+      .map((action) => ({
+        mission: action.key,
+        label: action.label,
+        count: rows.filter((row) => row.mission === action.key).length,
+      }));
+
+    return {
+      total: rows.length,
+      inTransit: rows.filter((row) => row.status === "transit").length,
+      blockades: rows.filter((row) => row.mission === "blockade").length,
+      focusMission: missionForAction(),
+      focusLabel: actionLabel(),
+      focusCount:
+        missionForAction() === null
+          ? 0
+          : rows.filter((row) => row.mission === missionForAction()).length,
+      byMission,
+    };
+  });
+
+  const shipOperationOriginRows = computed(() => {
+    const grouped = new Map();
+
+    for (const row of shipOperationRows.value) {
+      const systemId = row.originSystemId ?? row.mapSystemId;
+      if (!systemId) {
+        continue;
+      }
+
+      const current = grouped.get(systemId) ?? {
+        systemId,
+        systemName: translateSystemId(systemId),
+        total: 0,
+        focusCount: 0,
+        transitCount: 0,
+      };
+      current.total += 1;
+      current.focusCount += row.focus ? 1 : 0;
+      current.transitCount += row.status === "transit" ? 1 : 0;
+      grouped.set(systemId, current);
+    }
+
+    return [...grouped.values()].sort((left, right) =>
+      right.focusCount - left.focusCount
+      || right.total - left.total
+      || left.systemName.localeCompare(right.systemName),
+    );
+  });
+
+  function archiveReportItem(item) {
+    if (!item?.id) {
+      return;
+    }
+
+    const archivedItem = cloneReportItem(item);
+    const nextFollowUps = { ...ui.planner.followUpReportsById };
+    delete nextFollowUps[item.id];
+
+    ui.planner.archivedReportsById = {
+      ...ui.planner.archivedReportsById,
+      [item.id]: archivedItem,
+    };
+    ui.planner.followUpReportsById = nextFollowUps;
+    api.error = "";
+    api.tone = "success";
+    api.status = "Report archived";
+  }
+
+  function markReportForFollowUp(item) {
+    if (!item?.id) {
+      return;
+    }
+
+    const followUpItem = cloneReportItem(item);
+    const nextArchive = { ...ui.planner.archivedReportsById };
+    delete nextArchive[item.id];
+
+    ui.planner.archivedReportsById = nextArchive;
+    ui.planner.followUpReportsById = {
+      ...ui.planner.followUpReportsById,
+      [item.id]: followUpItem,
+    };
+    api.error = "";
+    api.tone = "success";
+    api.status = "Follow-up added to notebook";
+  }
+
+  function restoreReportToInbox(reportId) {
+    if (!reportId) {
+      return;
+    }
+
+    const nextArchive = { ...ui.planner.archivedReportsById };
+    const nextFollowUps = { ...ui.planner.followUpReportsById };
+    delete nextArchive[reportId];
+    delete nextFollowUps[reportId];
+    ui.planner.archivedReportsById = nextArchive;
+    ui.planner.followUpReportsById = nextFollowUps;
+    api.error = "";
+    api.tone = "info";
+    api.status = "Report returned to queue";
   }
 
   function updateProductionPlan(systemId, patch) {
@@ -2248,18 +2904,57 @@ function effectiveMass(ships, cargoSalt, metals) {
     };
   }
 
+  function updateProductionLine(systemId, lineId, patch) {
+    const current = ui.planner.productionBySystemId[systemId] ?? defaultProductionPlan();
+    const system = systemsMap.value.get(systemId);
+    const shipyardCount = inferShipyardCount(system);
+    const lines = normalizeProductionLines(
+      current.lines,
+      shipyardCount,
+      current.focus ?? "ships",
+      current.quantity ?? 1,
+    );
+    const nextLines = lines.map((line) =>
+      line.id === lineId
+        ? {
+          ...line,
+          ...patch,
+          quantity: normalizeProductionQuantity(
+            patch.focus ?? line.focus,
+            patch.quantity ?? line.quantity,
+          ),
+        }
+        : line,
+    );
+    updateProductionPlan(systemId, {
+      focus: nextLines[0]?.focus ?? current.focus ?? "ships",
+      quantity: nextLines[0]?.quantity ?? current.quantity ?? 1,
+      lines: nextLines,
+    });
+  }
+
   function setProductionFocus(systemId, focus) {
-    updateProductionPlan(systemId, { focus });
+    updateProductionLine(systemId, "yard_1", { focus });
   }
 
   function setProductionQuantity(systemId, quantity) {
-    updateProductionPlan(systemId, {
+    updateProductionLine(systemId, "yard_1", {
       quantity: Math.max(1, Number(quantity || 1)),
     });
   }
 
   function setProductionPosture(systemId, posture) {
     updateProductionPlan(systemId, { posture });
+  }
+
+  function setProductionLineFocus(systemId, lineId, focus) {
+    updateProductionLine(systemId, lineId, { focus });
+  }
+
+  function setProductionLineQuantity(systemId, lineId, quantity) {
+    updateProductionLine(systemId, lineId, {
+      quantity: Number(quantity ?? 0),
+    });
   }
 
   function setSpeculationText(value) {
@@ -2270,6 +2965,7 @@ function effectiveMass(ships, cargoSalt, metals) {
     ORDER_ACTIONS,
     WORKSPACE_VIEWS,
     PRODUCTION_FOCUS_OPTIONS,
+    PRODUCTION_LINE_FOCUS_OPTIONS,
     PRODUCTION_POSTURE_OPTIONS,
     api,
     testHarness,
@@ -2285,6 +2981,11 @@ function effectiveMass(ships, cargoSalt, metals) {
     selectedSystemProbeStatus,
     ownedSystems,
     productionPlannerRows,
+    probeCommandRows,
+    shipOperationRows,
+    shipOperationSummary,
+    shipOperationOriginRows,
+    originOptions,
     destinationOptions,
     anchorOptions,
     probeOriginOptions,
@@ -2294,9 +2995,12 @@ function effectiveMass(ships, cargoSalt, metals) {
     fleetMarkers,
     probeMarkers,
     feedItems,
+    archivedReportItems,
+    notebookTodoItems,
     reconSummary,
     orderBrief,
     orderSubmission,
+    actionUnderway,
     fleetEntries,
     probeEntries,
     snapshotSystem,
@@ -2305,6 +3009,7 @@ function effectiveMass(ships, cargoSalt, metals) {
     routePlan,
     starlaneSegments,
     blockadeStatus,
+    probeBadgeForSystem,
     homeBadgeForSystem,
     systemTone,
     starClass,
@@ -2317,9 +3022,14 @@ function effectiveMass(ships, cargoSalt, metals) {
     setActiveWorkspace,
     prepareProbeForSystem,
     setProbeOriginSystemId,
+    archiveReportItem,
+    markReportForFollowUp,
+    restoreReportToInbox,
     setProductionFocus,
     setProductionQuantity,
     setProductionPosture,
+    setProductionLineFocus,
+    setProductionLineQuantity,
     setSpeculationText,
     submitImmediateProbe,
     submitActiveOrder,

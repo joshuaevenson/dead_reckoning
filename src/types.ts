@@ -94,6 +94,7 @@ export interface FleetState {
   interceptedCombatDaysRemaining?: number;
   interceptedByFactionId?: string;
   retreatSystemId?: string;
+  launchVisibleToOthers: boolean;
   rules: FleetRule[];
   tradeOrder?: FleetOrder;
   lastAction?: FleetAction;
@@ -356,6 +357,7 @@ export interface SnapshotFleetView {
   travelPathSystemIds?: string[];
   interceptedCombatDaysRemaining?: number;
   interceptedByFactionId?: string;
+  launchVisibleToOthers: boolean;
 }
 
 export interface SnapshotProbeView {

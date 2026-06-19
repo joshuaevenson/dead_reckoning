@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build-scenario-catalog.mjs && tsc -p tsconfig.json && vite build",
-    "dev": "npm run build && node scripts/dev-server.mjs",
+    "dev": "npm run build && node scripts/dev.mjs",
+    "dev:backend": "node scripts/dev-server.mjs",
     "test": "npm run build && node --test test/*.test.js"
   },
   "dependencies": {

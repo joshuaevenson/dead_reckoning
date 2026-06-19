@@ -12,6 +12,53 @@ function createWorkerFetch() {
   };
 }
 
+function createScenarioFetch(scenariosById) {
+  return async function scenarioFetch(input, init) {
+    const url = typeof input === "string" ? input : input.url;
+    const requestUrl = new URL(url, "https://example.com");
+
+    if (requestUrl.pathname === "/api/health") {
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+
+    if (requestUrl.pathname === "/api/scenarios") {
+      return new Response(
+        JSON.stringify({
+          scenarios: Object.keys(scenariosById).map((id) => ({ id })),
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      );
+    }
+
+    if (requestUrl.pathname.startsWith("/api/scenarios/")) {
+      const scenarioId = decodeURIComponent(requestUrl.pathname.slice("/api/scenarios/".length));
+      const scenario = scenariosById[scenarioId];
+      return scenario
+        ? new Response(JSON.stringify(scenario), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        })
+        : new Response("missing scenario", { status: 404 });
+    }
+
+    if (requestUrl.pathname === "/api/simulate") {
+      return worker.fetch(new Request(`https://example.com${requestUrl.pathname}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: init?.body,
+      }));
+    }
+
+    return new Response("not found", { status: 404 });
+  };
+}
+
 function createMemoryStorage() {
   const data = new Map();
   return {
@@ -41,7 +88,7 @@ test("ui state loads scenario through worker and exposes player-facing reports",
   assert.equal(store.selectedSystemOverview.value?.title, "Sol");
   assert.equal(store.selectedSystemOverview.value?.homeLabel, "Your home system");
   assert.equal(store.summaryCards.value.some((card) => card.label === "Ships"), true);
-  assert.equal(store.feedItems.value.some((item) => item.title.includes("Crimson Wake launched 6 ships toward Barnard's Star")), true);
+  assert.equal(store.feedItems.value.some((item) => item.title.includes("Crimson Wake launched an estimated 6 ships toward Barnard's Star")), true);
   assert.equal(store.starlaneSegments.value.length > 0, true);
 });
 
@@ -73,6 +120,7 @@ test("ui state updates probe status and feed immediately after a successful prob
   await nextTick();
 
   assert.equal(store.api.status, "Probe en route to Tau Ceti");
+  assert.equal(store.ui.activeWorkspace, "probes");
   assert.equal(store.selectedSystemOverview.value?.probeStatus?.label, "Probe arrives in 2 years");
   assert.equal(store.selectedSystemOverview.value?.probeStatus?.actionable, false);
   assert.equal(store.feedItems.value[0]?.title, "Aster Crown dispatched a probe toward Tau Ceti");
@@ -97,6 +145,10 @@ test("ui state tracks workspace navigation and returns to map for command drafti
   await nextTick();
   assert.equal(store.ui.activeWorkspace, "reports");
 
+  store.setActiveWorkspace("probes");
+  await nextTick();
+  assert.equal(store.ui.activeWorkspace, "probes");
+
   store.setActiveWorkspace("notebook");
   await nextTick();
   assert.equal(store.ui.activeWorkspace, "notebook");
@@ -111,6 +163,86 @@ test("ui state tracks workspace navigation and returns to map for command drafti
   assert.equal(store.ui.activeWorkspace, "map");
   assert.equal(store.ui.activeAction, "deploy_probe");
   assert.equal(store.ui.orderDraft.anchorId, "enemy_home");
+});
+
+test("ui state can execute from the map dock without a selected star and expose ship operations data", async () => {
+  const store = createCommandState({
+    fetchImpl: createWorkerFetch(),
+    locationSearch: "?scenario=information_probe_warning&seat=blue",
+  });
+
+  await store.loadInitialData();
+  await nextTick();
+
+  store.setSelectedSystemId(null);
+  await nextTick();
+
+  assert.equal(store.ui.orderDraft.originSystemId, null);
+  assert.match(store.orderSubmission.value.reason, /Choose a friendly origin system/u);
+  assert.equal(store.actionUnderway.value.items.length, 0);
+
+  store.ui.orderDraft.originSystemId = store.currentSeat.value?.faction.homeSystemId ?? "blue_home";
+  store.ui.orderDraft.destinationId = store.destinationOptions.value[0]?.value ?? null;
+  store.ui.orderDraft.ships = 1;
+  await store.submitActiveOrder();
+  await nextTick();
+
+  assert.equal(store.actionUnderway.value.items.length >= 1, true);
+  assert.match(store.actionUnderway.value.title, /mission.*underway/u);
+  assert.equal(store.shipOperationRows.value.length >= 1, true);
+  assert.equal(store.shipOperationSummary.value.total >= 1, true);
+  assert.equal(store.shipOperationOriginRows.value.length >= 1, true);
+
+  store.prepareProbeForSystem("enemy_home");
+  await nextTick();
+
+  assert.match(store.actionUnderway.value.summary, /No friendly probe is currently assigned/u);
+
+  await store.submitActiveOrder();
+  await nextTick();
+
+  assert.equal(store.actionUnderway.value.items.length >= 1, true);
+  assert.match(store.actionUnderway.value.title, /probe mission/u);
+});
+
+test("ui state can triage reports into archive and notebook follow-up, and restore them later", async () => {
+  const storage = createMemoryStorage();
+  const options = {
+    fetchImpl: createWorkerFetch(),
+    locationSearch: "?scenario=information_probe_warning&seat=blue",
+    storage,
+  };
+  const store = createCommandState(options);
+
+  await store.loadInitialData();
+  await nextTick();
+
+  assert.equal(store.feedItems.value.length >= 2, true);
+  const followUpItem = store.feedItems.value[0];
+  const archiveItem = store.feedItems.value[1];
+
+  store.markReportForFollowUp(followUpItem);
+  await nextTick();
+  store.archiveReportItem(archiveItem);
+  await nextTick();
+
+  assert.equal(store.feedItems.value.some((item) => item.id === followUpItem.id), false);
+  assert.equal(store.feedItems.value.some((item) => item.id === archiveItem.id), false);
+  assert.equal(store.notebookTodoItems.value.some((item) => item.id === followUpItem.id), true);
+  assert.equal(store.archivedReportItems.value.some((item) => item.id === archiveItem.id), true);
+
+  const reloadedStore = createCommandState(options);
+  await reloadedStore.loadInitialData();
+  await nextTick();
+
+  assert.equal(reloadedStore.notebookTodoItems.value.some((item) => item.id === followUpItem.id), true);
+  assert.equal(reloadedStore.archivedReportItems.value.some((item) => item.id === archiveItem.id), true);
+
+  reloadedStore.restoreReportToInbox(followUpItem.id);
+  await nextTick();
+
+  assert.equal(reloadedStore.notebookTodoItems.value.some((item) => item.id === followUpItem.id), false);
+  assert.equal(reloadedStore.feedItems.value.some((item) => item.id === followUpItem.id), true);
 });
 
 test("ui state allows direct probe travel to distant systems without route gating", async () => {
@@ -166,6 +298,20 @@ test("ui state shows on-station probes as active reconnaissance", async () => {
   assert.equal(store.reconSummary.value.items.some((item) => item.label === "Ross 154" && item.status === "on_station"), true);
 });
 
+test("ui state exposes dedicated probe workspace data for active probes and ready depots", async () => {
+  const store = createCommandState({
+    fetchImpl: createWorkerFetch(),
+    locationSearch: "?scenario=information_probe_warning&seat=blue",
+  });
+
+  await store.loadInitialData();
+  await nextTick();
+
+  assert.equal(store.reconSummary.value.total >= 1, true);
+  assert.equal(store.probeCommandRows.value.some((row) => row.systemName === "Sol"), true);
+  assert.equal(store.probeCommandRows.value.some((row) => row.readyProbes >= 0), true);
+});
+
 test("ui state drafts probe orders with an affordable suggested origin", async () => {
   const store = createCommandState({
     fetchImpl: createWorkerFetch(),
@@ -181,9 +327,10 @@ test("ui state drafts probe orders with an affordable suggested origin", async (
   assert.equal(store.ui.activeAction, "deploy_probe");
   assert.equal(store.ui.orderDraft.anchorId, "green_target");
   assert.equal(store.ui.orderDraft.probeOriginId, "blue_home");
-  assert.equal(store.selectedSystem.value?.system.id, "blue_home");
+  assert.equal(store.selectedSystem.value?.system.id, "green_target");
   assert.equal(store.probeOriginOptions.value.some((option) => option.value === "blue_frontier"), true);
   assert.equal(store.orderSubmission.value.disabled, false);
+  assert.match(store.api.status, /Probe draft ready/u);
 });
 
 test("ui state blocks probe launch from an understocked origin and succeeds after changing origin", async () => {
@@ -196,14 +343,19 @@ test("ui state blocks probe launch from an understocked origin and succeeds afte
   store.prepareProbeForSystem("green_target");
   await nextTick();
 
+  assert.equal(store.selectedSystemFriendly.value, false);
+  assert.equal(store.orderSubmission.value.label, "Dispatch Probe");
+  assert.equal(store.orderSubmission.value.disabled, false);
+
   store.setProbeOriginSystemId("blue_frontier");
   await nextTick();
-  assert.equal(store.selectedSystem.value?.system.id, "blue_frontier");
+  assert.equal(store.selectedSystem.value?.system.id, "green_target");
   assert.equal(store.orderSubmission.value.disabled, true);
   assert.match(store.orderSubmission.value.reason, /needs 2 salt and 1 ready probe/u);
 
   store.setProbeOriginSystemId("blue_home");
   await nextTick();
+  assert.equal(store.selectedSystem.value?.system.id, "green_target");
   assert.equal(store.orderSubmission.value.disabled, false);
 
   await store.submitActiveOrder();
@@ -221,6 +373,7 @@ test("ui state blocks probe launch from an understocked origin and succeeds afte
     ),
     true,
   );
+  assert.equal(store.ui.activeWorkspace, "probes");
 });
 
 test("ui state supports multiple friendly probes and shows them in the recon net and on the map", async () => {
@@ -264,6 +417,206 @@ test("ui state shows estimated in-transit fleet positions after a launch", async
   assert.equal(store.api.status, "Attack order transmitted");
   assert.equal(store.fleetMarkers.value.length > 0, true);
   assert.match(store.fleetMarkers.value[0]?.detail ?? "", /ETA/u);
+  assert.match(store.fleetMarkers.value[0]?.detail ?? "", /Cargo: 0 salt, 0 metals/u);
+});
+
+test("ui state shows hostile transit signatures as estimates", async () => {
+  const scenario = {
+    name: "public_hostile_transit",
+    seed: 3,
+    startDate: "2240-01-01",
+    durationDays: 3,
+    factions: [
+      { id: "blue", name: "Aster Crown", homeSystemId: "blue_home" },
+      { id: "red", name: "Crimson Wake", homeSystemId: "red_home" },
+    ],
+    systems: [
+      {
+        id: "blue_home",
+        name: "Sol",
+        position: { x: 0, y: 0 },
+        starType: "yellow_star",
+        metalRichness: "standard",
+        ownerId: "blue",
+        saltStockpile: 20,
+        metalStockpile: 20,
+        probeStockpile: 0,
+        infrastructure: 4,
+        defense: 2,
+        controlAgeDays: 100,
+        garrisonShips: { blue: 4 },
+      },
+      {
+        id: "red_home",
+        name: "Tau Ceti",
+        position: { x: 2, y: 0 },
+        starType: "yellow_star",
+        metalRichness: "standard",
+        ownerId: "red",
+        saltStockpile: 400,
+        metalStockpile: 20,
+        probeStockpile: 1,
+        infrastructure: 4,
+        defense: 2,
+        controlAgeDays: 100,
+        garrisonShips: { red: 8 },
+      },
+      {
+        id: "frontier",
+        name: "Barnard's Star",
+        position: { x: 9, y: 0 },
+        starType: "red_dwarf",
+        metalRichness: "poor",
+        ownerId: null,
+        saltStockpile: 0,
+        metalStockpile: 0,
+        probeStockpile: 0,
+        infrastructure: 0,
+        defense: 0,
+        controlAgeDays: 0,
+      },
+    ],
+    routes: [
+      {
+        id: "red-frontier",
+        a: "red_home",
+        b: "frontier",
+        distance: 4,
+        travelDays: 4,
+        headingFromA: "frontier",
+        headingFromB: "red",
+      },
+    ],
+    commands: [
+      {
+        type: "launch_fleet",
+        at: "2240-01-01",
+        factionId: "red",
+        originSystemId: "red_home",
+        destinationSystemId: "frontier",
+        ships: 6,
+        cargoSalt: 4,
+        metals: 3,
+        mission: "attack",
+      },
+    ],
+  };
+
+  const store = createCommandState({
+    fetchImpl: createScenarioFetch({ public_hostile_transit: scenario }),
+    locationSearch: "?scenario=public_hostile_transit&seat=blue",
+  });
+
+  await store.loadInitialData();
+  await nextTick();
+
+  assert.equal(store.fleetMarkers.value.length, 1);
+  assert.match(store.fleetMarkers.value[0]?.label ?? "", /^~/u);
+  assert.match(store.fleetMarkers.value[0]?.detail ?? "", /Estimated foreign transit/u);
+  assert.match(store.fleetMarkers.value[0]?.detail ?? "", /Estimated cargo:/u);
+});
+
+test("ui state hides sub-threshold foreign launches from other seats", async () => {
+  const scenario = {
+    name: "hidden_hostile_launch",
+    seed: 5,
+    startDate: "2240-01-01",
+    durationDays: 3,
+    factions: [
+      { id: "blue", name: "Aster Crown", homeSystemId: "blue_home" },
+      { id: "red", name: "Crimson Wake", homeSystemId: "red_home" },
+    ],
+    systems: [
+      {
+        id: "blue_home",
+        name: "Sol",
+        position: { x: 0, y: 0 },
+        starType: "yellow_star",
+        metalRichness: "standard",
+        ownerId: "blue",
+        saltStockpile: 20,
+        metalStockpile: 20,
+        probeStockpile: 0,
+        infrastructure: 4,
+        defense: 2,
+        controlAgeDays: 100,
+        garrisonShips: { blue: 4 },
+      },
+      {
+        id: "red_home",
+        name: "Tau Ceti",
+        position: { x: 1, y: 0 },
+        starType: "yellow_star",
+        metalRichness: "standard",
+        ownerId: "red",
+        saltStockpile: 20,
+        metalStockpile: 20,
+        probeStockpile: 1,
+        infrastructure: 4,
+        defense: 2,
+        controlAgeDays: 100,
+        garrisonShips: { red: 3 },
+      },
+      {
+        id: "screen",
+        name: "Ross 154",
+        position: { x: 1.2, y: 0 },
+        starType: "red_dwarf",
+        metalRichness: "poor",
+        ownerId: null,
+        saltStockpile: 0,
+        metalStockpile: 0,
+        probeStockpile: 0,
+        infrastructure: 0,
+        defense: 0,
+        controlAgeDays: 0,
+      },
+    ],
+    routes: [
+      {
+        id: "red-screen",
+        a: "red_home",
+        b: "screen",
+        distance: 0.1,
+        travelDays: 4,
+        headingFromA: "screen",
+        headingFromB: "red",
+      },
+    ],
+    commands: [
+      {
+        type: "deploy_probe",
+        at: "2240-01-01",
+        factionId: "red",
+        originSystemId: "red_home",
+        anchorSystemId: "screen",
+        reportDestinationSystemId: "red_home",
+      },
+      {
+        type: "launch_fleet",
+        at: "2240-01-01",
+        factionId: "red",
+        originSystemId: "red_home",
+        destinationSystemId: "screen",
+        ships: 1,
+        mission: "reinforce",
+      },
+    ],
+  };
+
+  const store = createCommandState({
+    fetchImpl: createScenarioFetch({ hidden_hostile_launch: scenario }),
+    locationSearch: "?scenario=hidden_hostile_launch&seat=blue",
+  });
+
+  await store.loadInitialData();
+  await nextTick();
+
+  assert.equal(store.fleetMarkers.value.length, 0);
+  assert.equal(
+    store.feedItems.value.some((item) => /Crimson Wake/u.test(item.title)),
+    false,
+  );
 });
 
 test("ui state submits blockade orders as blockade missions", async () => {
@@ -315,9 +668,12 @@ test("ui state keeps production schedules and speculation in player planning sta
 
   assert.equal(store.productionPlannerRows.value.length >= 1, true);
   assert.equal(store.productionPlannerRows.value.some((row) => row.systemId === "blue_home" && row.systemName === "Sol"), true);
+  assert.equal(store.productionPlannerRows.value.find((row) => row.systemId === "blue_home")?.shipyardCount, 3);
 
   store.setProductionFocus("blue_home", "probes");
   store.setProductionQuantity("blue_home", 3);
+  store.setProductionLineFocus("blue_home", "yard_2", "shipyard");
+  store.setProductionLineQuantity("blue_home", "yard_2", 1);
   store.setProductionPosture("blue_home", "siege");
   store.setSpeculationText("Verdant Bastion is likely banking ships for Tau Ceti.");
   await nextTick();
@@ -326,6 +682,7 @@ test("ui state keeps production schedules and speculation in player planning sta
   assert.equal(updatedHomeRow?.focus, "probes");
   assert.equal(updatedHomeRow?.quantity, 3);
   assert.equal(updatedHomeRow?.posture, "siege");
+  assert.equal(updatedHomeRow?.lines.find((line) => line.id === "yard_2")?.focus, "shipyard");
   assert.equal(store.ui.planner.speculation, "Verdant Bastion is likely banking ships for Tau Ceti.");
 
   const reloaded = createCommandState({
@@ -340,5 +697,6 @@ test("ui state keeps production schedules and speculation in player planning sta
   assert.equal(reloadedHomeRow?.focus, "probes");
   assert.equal(reloadedHomeRow?.quantity, 3);
   assert.equal(reloadedHomeRow?.posture, "siege");
+  assert.equal(reloadedHomeRow?.lines.find((line) => line.id === "yard_2")?.focus, "shipyard");
   assert.equal(reloaded.ui.planner.speculation, "Verdant Bastion is likely banking ships for Tau Ceti.");
 });

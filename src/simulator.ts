@@ -51,6 +51,7 @@ const DEFENSE_BUILD_TIME = 5;
 const PROBE_BUILD_METAL = 4;
 const PROBE_BUILD_TIME = 1;
 const PROBE_COST_SALT = 2;
+const LAUNCH_VISIBILITY_SALT_THRESHOLD = 3;
 const THREAT_MEMORY_DAYS = 12;
 const THREAT_DECAY_FLOOR = 0.15;
 const FRESH_THREAT_SCORE = 8;
@@ -431,6 +432,7 @@ class SimulationEngine {
       travelSegmentIds: plan.segmentIds,
       travelPathSystemIds: plan.pathSystemIds,
       retreatSystemId: command.retreatSystemId,
+      launchVisibleToOthers: totalDepartureSalt >= LAUNCH_VISIBILITY_SALT_THRESHOLD,
       rules: command.rules ?? [],
     };
 
@@ -786,6 +788,7 @@ class SimulationEngine {
         travelPathSystemIds: fleet.travelPathSystemIds,
         interceptedCombatDaysRemaining: fleet.interceptedCombatDaysRemaining,
         interceptedByFactionId: fleet.interceptedByFactionId,
+        launchVisibleToOthers: fleet.launchVisibleToOthers,
       };
     }
 
@@ -905,6 +908,7 @@ class SimulationEngine {
       routeDistanceRemaining: 0,
       routeTravelDaysRemaining: 0,
       retreatSystemId: input.retreatSystemId,
+      launchVisibleToOthers: true,
       rules: input.rules,
     };
     this.fleets.set(fleet.id, fleet);
@@ -999,6 +1003,10 @@ class SimulationEngine {
     burnType: "departure" | "arrival",
     fleet: FleetState,
   ): void {
+    if (burnType === "departure" && !fleet.launchVisibleToOthers) {
+      return;
+    }
+
     for (const faction of this.factions.values()) {
       const travelDays = this.safeTravelDays(sourceSystemId, faction.homeSystemId);
       if (travelDays === null) {

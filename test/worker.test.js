@@ -150,3 +150,113 @@ test("worker /simulate supports building probes from metal and launching multipl
   assert.equal(activeProbes.length, 2);
   assert.equal(activeProbes.every((probe) => probe.status === "transit"), true);
 });
+
+test("worker /simulate keeps sub-threshold launches out of foreign telescope reports", async () => {
+  const scenario = {
+    name: "hidden_launch_threshold",
+    seed: 9,
+    startDate: "2240-01-01",
+    durationDays: 2,
+    factions: [
+      {
+        id: "blue",
+        name: "Aster Crown",
+        homeSystemId: "blue_home",
+      },
+      {
+        id: "red",
+        name: "Crimson Wake",
+        homeSystemId: "red_home",
+      },
+    ],
+    systems: [
+      {
+        id: "blue_home",
+        name: "Sol",
+        position: { x: 0, y: 0 },
+        starType: "yellow_star",
+        saltProfile: "none",
+        metalRichness: "standard",
+        ownerId: "blue",
+        saltStockpile: 10,
+        metalStockpile: 10,
+        probeStockpile: 0,
+        infrastructure: 5,
+        defense: 2,
+        controlAgeDays: 100,
+        garrisonShips: { blue: 3 },
+      },
+      {
+        id: "red_home",
+        name: "Tau Ceti",
+        position: { x: 1, y: 0 },
+        starType: "yellow_star",
+        saltProfile: "none",
+        metalRichness: "standard",
+        ownerId: "red",
+        saltStockpile: 10,
+        metalStockpile: 10,
+        probeStockpile: 0,
+        infrastructure: 5,
+        defense: 2,
+        controlAgeDays: 100,
+        garrisonShips: { red: 2 },
+      },
+      {
+        id: "screen",
+        name: "Ross 154",
+        position: { x: 1.2, y: 0 },
+        starType: "red_dwarf",
+        saltProfile: "none",
+        metalRichness: "poor",
+        ownerId: null,
+        saltStockpile: 0,
+        metalStockpile: 0,
+        probeStockpile: 0,
+        infrastructure: 0,
+        defense: 0,
+        controlAgeDays: 0,
+      },
+    ],
+    routes: [
+      {
+        id: "red-screen",
+        a: "red_home",
+        b: "screen",
+        distance: 0.1,
+        travelDays: 3,
+        headingFromA: "screen",
+        headingFromB: "red",
+      },
+    ],
+    commands: [
+      {
+        type: "launch_fleet",
+        at: "2240-01-01",
+        factionId: "red",
+        originSystemId: "red_home",
+        destinationSystemId: "screen",
+        ships: 1,
+        mission: "reinforce",
+      },
+    ],
+  };
+
+  const response = await worker.fetch(
+    new Request("https://example.com/api/simulate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(scenario),
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  const finalSnapshot = body.snapshots[body.snapshots.length - 1];
+  const hostileFleet = Object.values(finalSnapshot.fleets).find(
+    (fleet) => fleet.factionId === "red" && fleet.currentSystemId === "screen",
+  );
+
+  assert.equal(hostileFleet?.launchVisibleToOthers, false);
+  assert.equal(finalSnapshot.factions.blue.reportCount, 0);
+});
