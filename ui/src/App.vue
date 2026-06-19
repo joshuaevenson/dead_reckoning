@@ -44,6 +44,7 @@ const {
   feedItems,
   archivedReportItems,
   notebookTodoItems,
+  diplomaticInboxItems,
   reconSummary,
   orderBrief,
   orderSubmission,
@@ -943,7 +944,9 @@ onMounted(async () => {
                       <Tag :severity="item.tone" rounded>{{ item.date }}</Tag>
                     </div>
                     <div class="feed-title">{{ item.title }}</div>
-                    <div class="feed-byline">{{ item.advisorName }} · {{ item.advisorRole }}</div>
+                    <div class="feed-byline">
+                      {{ item.advisorName }} · {{ item.advisorRole }}<span v-if="item.sourceLine"> · {{ item.sourceLine }}</span>
+                    </div>
                     <p class="feed-copy">{{ item.summary }}</p>
                     <p class="feed-impact"><span>Consequence:</span> {{ item.analysis }}</p>
                     <div class="feed-actions">
@@ -974,6 +977,36 @@ onMounted(async () => {
             <section class="reports-side-panel report-archive-panel">
               <div class="planning-header">
                 <div>
+                  <div class="panel-kicker">Diplomatic Inbox</div>
+                  <div class="panel-title">Delivered Pigeons</div>
+                </div>
+                <Tag severity="secondary" rounded>{{ diplomaticInboxItems.length }} signals</Tag>
+              </div>
+
+              <div v-if="diplomaticInboxItems.length > 0" class="report-triage-list">
+                <article
+                  v-for="item in diplomaticInboxItems"
+                  :key="`dispatch-${item.id}`"
+                  :class="['feed-card', 'feed-card-compact', `feed-tone-${item.tone}`]"
+                >
+                  <div class="feed-card-top">
+                    <div class="feed-kicker">{{ item.kicker }}</div>
+                    <Tag :severity="item.queueStateSeverity" rounded>{{ item.queueStateLabel }}</Tag>
+                  </div>
+                  <div class="feed-title">{{ item.title }}</div>
+                  <div class="feed-byline">{{ item.date }} · {{ item.sourceLine }}</div>
+                  <p class="feed-copy">{{ item.summary }}</p>
+                  <p class="feed-impact"><span>Implication:</span> {{ item.analysis }}</p>
+                </article>
+              </div>
+              <div v-else class="map-empty-state reports-empty-state">
+                No diplomatic pigeons have reached the desk yet.
+              </div>
+            </section>
+
+            <section class="reports-side-panel report-archive-panel">
+              <div class="planning-header">
+                <div>
                   <div class="panel-kicker">Archive</div>
                   <div class="panel-title">Processed Reports</div>
                 </div>
@@ -991,7 +1024,9 @@ onMounted(async () => {
                     <Tag :severity="item.tone" rounded>{{ item.date }}</Tag>
                   </div>
                   <div class="feed-title">{{ item.title }}</div>
-                  <div class="feed-byline">{{ item.advisorName ?? "Advisor queue" }} · {{ item.advisorRole ?? item.kicker }}</div>
+                  <div class="feed-byline">
+                    {{ item.advisorName ?? "Advisor queue" }} · {{ item.advisorRole ?? item.kicker }}<span v-if="item.sourceLine"> · {{ item.sourceLine }}</span>
+                  </div>
                   <p class="feed-copy">{{ item.summary }}</p>
                   <div class="feed-actions feed-actions-compact">
                     <Button

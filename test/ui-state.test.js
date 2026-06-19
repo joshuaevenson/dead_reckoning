@@ -355,6 +355,156 @@ test("ui state exposes a diplomacy board with inferred rival stances", async () 
   assert.equal(distantRow?.stanceLabel, "Distant");
 });
 
+test("ui state surfaces delivered diplomatic pigeons with symbolic faction voice", async () => {
+  const scenario = {
+    name: "diplomatic_pigeons",
+    seed: 11,
+    startDate: "2240-01-01",
+    durationDays: 3,
+    commanderProfiles: [
+      {
+        id: "chatty",
+        kind: "chatty_frontier",
+      },
+      {
+        id: "turtle",
+        kind: "turtle",
+      },
+    ],
+    factions: [
+      { id: "blue", name: "Aster Crown", homeSystemId: "blue_home" },
+      { id: "red", name: "Crimson Wake", homeSystemId: "red_home", commanderProfileId: "chatty" },
+      { id: "green", name: "Verdant Bastion", homeSystemId: "green_home", commanderProfileId: "turtle" },
+    ],
+    systems: [
+      {
+        id: "blue_home",
+        name: "Sol",
+        position: { x: 0, y: 0 },
+        starType: "yellow_star",
+        metalRichness: "standard",
+        ownerId: "blue",
+        saltStockpile: 30,
+        metalStockpile: 18,
+        probeStockpile: 1,
+        infrastructure: 4,
+        defense: 2,
+        controlAgeDays: 100,
+        garrisonShips: { blue: 5 },
+      },
+      {
+        id: "red_home",
+        name: "Tau Ceti",
+        position: { x: 2, y: 0 },
+        starType: "yellow_star",
+        metalRichness: "standard",
+        ownerId: "red",
+        saltStockpile: 30,
+        metalStockpile: 18,
+        probeStockpile: 0,
+        infrastructure: 4,
+        defense: 2,
+        controlAgeDays: 100,
+        garrisonShips: { red: 6 },
+      },
+      {
+        id: "green_home",
+        name: "Epsilon Eridani",
+        position: { x: 1, y: 0 },
+        starType: "yellow_star",
+        metalRichness: "standard",
+        ownerId: "green",
+        saltStockpile: 30,
+        metalStockpile: 18,
+        probeStockpile: 0,
+        infrastructure: 4,
+        defense: 2,
+        controlAgeDays: 100,
+        garrisonShips: { green: 7 },
+      },
+    ],
+    routes: [
+      {
+        id: "blue-red",
+        a: "blue_home",
+        b: "red_home",
+        distance: 2,
+        travelDays: 2,
+        headingFromA: "red",
+        headingFromB: "blue",
+      },
+      {
+        id: "blue-green",
+        a: "blue_home",
+        b: "green_home",
+        distance: 1,
+        travelDays: 1,
+        headingFromA: "green",
+        headingFromB: "blue",
+      },
+    ],
+    commands: [
+      {
+        type: "send_pigeon",
+        at: "2240-01-01",
+        factionId: "green",
+        originSystemId: "green_home",
+        destinationSystemId: "blue_home",
+        recipientFactionId: "blue",
+        packetType: "diplomatic",
+        entries: [
+          "intent:threaten",
+          "subject:blue_home",
+          "demand:keep your scouts clear of Sol",
+        ],
+      },
+      {
+        type: "send_pigeon",
+        at: "2240-01-01",
+        factionId: "red",
+        originSystemId: "red_home",
+        destinationSystemId: "blue_home",
+        recipientFactionId: "blue",
+        packetType: "diplomatic",
+        entries: [
+          "intent:offer",
+          "subject:blue_home",
+          "offer:trade survey data instead of racing blind into Sol",
+        ],
+      },
+    ],
+  };
+
+  const store = createCommandState({
+    fetchImpl: createScenarioFetch({ diplomatic_pigeons: scenario }),
+    locationSearch: "?scenario=diplomatic_pigeons&seat=blue",
+  });
+
+  await store.loadInitialData();
+  await nextTick();
+
+  assert.equal(store.diplomaticInboxItems.value.length, 2);
+  assert.equal(store.feedItems.value.some((item) => item.kicker === "Diplomatic pigeon"), true);
+
+  const greenItem = store.diplomaticInboxItems.value.find((item) => item.senderFactionId === "green");
+  const redItem = store.diplomaticInboxItems.value.find((item) => item.senderFactionId === "red");
+  const greenRow = store.diplomacyRows.value.find((row) => row.factionId === "green");
+  const redRow = store.diplomacyRows.value.find((row) => row.factionId === "red");
+
+  assert.match(greenItem?.title ?? "", /Verdant Bastion/u);
+  assert.match(greenItem?.summary ?? "", /advise restraint around Sol/u);
+  assert.match(greenItem?.analysis ?? "", /pressure from strength/u);
+  assert.match(greenItem?.voiceLabel ?? "", /warning|threat/i);
+
+  assert.match(redItem?.title ?? "", /Crimson Wake/u);
+  assert.match(redItem?.summary ?? "", /trade survey data instead of racing blind into Sol/u);
+  assert.match(redItem?.analysis ?? "", /terms offered from advantage|information play/u);
+  assert.notEqual(greenItem?.summary, redItem?.summary);
+
+  assert.match(greenRow?.latestSignalText ?? "", /advise restraint around Sol/u);
+  assert.match(redRow?.latestSignalText ?? "", /trade survey data instead of racing blind into Sol/u);
+});
+
 test("ui state allows direct probe travel to distant systems without route gating", async () => {
   const store = createCommandState({
     fetchImpl: createWorkerFetch(),

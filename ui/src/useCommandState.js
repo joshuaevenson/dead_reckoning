@@ -316,6 +316,9 @@ function cloneReportItem(item) {
     advisorName: item.advisorName,
     advisorRole: item.advisorRole,
     advisorSource: item.advisorSource,
+    sourceLine: item.sourceLine,
+    senderFactionId: item.senderFactionId,
+    voiceLabel: item.voiceLabel,
   };
 }
 
@@ -805,6 +808,14 @@ function effectiveMass(ships, cargoSalt, metals) {
     }
 
     return systemsMap.value.get(currentSeat.value.faction.homeSystemId) ?? null;
+  });
+
+  const currentSeatReports = computed(() => {
+    if (!currentSeat.value) {
+      return [];
+    }
+
+    return world.result?.reportsByFactionId?.[currentSeat.value.faction.id] ?? [];
   });
 
   const plannerStorageKey = computed(() => {
@@ -1816,6 +1827,320 @@ function effectiveMass(ships, cargoSalt, metals) {
     ]),
   );
 
+  function factionDefinition(factionId) {
+    return world.scenario?.factions.find((candidate) => candidate.id === factionId) ?? null;
+  }
+
+  function commanderProfileForFaction(factionId) {
+    const faction = factionDefinition(factionId);
+    if (!faction?.commanderProfileId) {
+      return null;
+    }
+
+    return world.scenario?.commanderProfiles?.find((profile) => profile.id === faction.commanderProfileId) ?? null;
+  }
+
+  function parseDispatchEntries(entries) {
+    const directives = {
+      intent: null,
+      subjectSystemId: null,
+      demand: null,
+      offer: null,
+      message: null,
+      notes: [],
+    };
+
+    for (const entry of Array.isArray(entries) ? entries : []) {
+      if (typeof entry !== "string") {
+        continue;
+      }
+
+      const separator = entry.indexOf(":");
+      if (separator === -1) {
+        directives.notes.push(entry.trim());
+        continue;
+      }
+
+      const key = entry.slice(0, separator).trim();
+      const value = entry.slice(separator + 1).trim();
+
+      if (key === "intent") {
+        directives.intent = value || null;
+      } else if (key === "subject") {
+        directives.subjectSystemId = value || null;
+      } else if (key === "demand") {
+        directives.demand = value || null;
+      } else if (key === "offer") {
+        directives.offer = value || null;
+      } else if (key === "message") {
+        directives.message = value || null;
+      } else {
+        directives.notes.push(entry.trim());
+      }
+    }
+
+    return directives;
+  }
+
+  function diplomaticVoiceSeed(factionId) {
+    const profileKind = commanderProfileForFaction(factionId)?.kind ?? null;
+
+    switch (profileKind) {
+      case "turtle":
+        return "deliberate";
+      case "chatty_frontier":
+        return "opportunistic";
+      case "napoleonic":
+        return "imperious";
+      case "bad_commander":
+        return "blustering";
+      case "frontier_expander":
+        return "expansionist";
+      default:
+        return "formal";
+    }
+  }
+
+  function senderLeverageAgainstSeat(factionId) {
+    const sender = latestSnapshot.value?.factions?.[factionId];
+    const seat = currentSeat.value?.snapshot;
+    if (!sender || !seat) {
+      return "balanced";
+    }
+
+    const senderShips = sender.totalShips ?? 0;
+    const seatShips = seat.totalShips ?? 0;
+    const senderSystems = sender.ownedSystems ?? 0;
+    const seatSystems = seat.ownedSystems ?? 0;
+
+    if (senderShips >= seatShips + 2 || senderSystems > seatSystems) {
+      return "high";
+    }
+
+    if (senderShips + 2 < seatShips && senderSystems <= seatSystems) {
+      return "low";
+    }
+
+    return "balanced";
+  }
+
+  function normalizeDiplomaticIntent(intent, leverage) {
+    switch (intent) {
+      case "threat":
+      case "threaten":
+      case "ultimatum":
+      case "pressure":
+        return "threaten";
+      case "offer":
+      case "trade":
+      case "conciliate":
+      case "truce":
+        return "offer";
+      case "probe":
+      case "query":
+      case "request":
+        return "probe";
+      default:
+        return leverage === "high" ? "threaten" : "probe";
+    }
+  }
+
+  function diplomaticVoiceLabel(intent, voiceSeed) {
+    if (intent === "threaten") {
+      switch (voiceSeed) {
+        case "deliberate":
+          return "Measured warning";
+        case "opportunistic":
+          return "Opportunistic threat";
+        case "imperious":
+          return "Imperious warning";
+        case "blustering":
+          return "Blustering threat";
+        case "expansionist":
+          return "Expansion warning";
+        default:
+          return "Threatening";
+      }
+    }
+
+    if (intent === "offer") {
+      switch (voiceSeed) {
+        case "opportunistic":
+          return "Transactional offer";
+        case "deliberate":
+          return "Cautious offer";
+        default:
+          return "Conciliatory";
+      }
+    }
+
+    switch (voiceSeed) {
+      case "deliberate":
+        return "Measured signal";
+      case "opportunistic":
+        return "Probing signal";
+      default:
+        return "Diplomatic signal";
+    }
+  }
+
+  function diplomaticItemTone(intent, leverage) {
+    if (intent === "threaten") {
+      return leverage === "high" ? "danger" : "warn";
+    }
+
+    if (intent === "offer") {
+      return "secondary";
+    }
+
+    return "info";
+  }
+
+  function renderDiplomaticMessage(senderFactionId, directives, intent, voiceSeed, leverage) {
+    if (directives.message) {
+      return directives.message;
+    }
+
+    const subjectName = directives.subjectSystemId
+      ? translateSystemId(directives.subjectSystemId)
+      : "the frontier";
+    const demandText = directives.demand ?? `keep clear of ${subjectName}`;
+    const offerText = directives.offer ?? `trade information instead of racing blind into ${subjectName}`;
+
+    if (intent === "threaten") {
+      switch (voiceSeed) {
+        case "deliberate":
+          return leverage === "high"
+            ? `We advise restraint around ${subjectName}. ${demandText}, and this exchange can remain a message instead of a campaign.`
+            : `We would prefer calm around ${subjectName}, but continued pressure there will be answered in kind.`;
+        case "opportunistic":
+          return leverage === "high"
+            ? `The lane around ${subjectName} is narrowing. ${demandText} before we settle the question with ships.`
+            : `There is still time to step away from ${subjectName} before this frontier becomes expensive for both of us.`;
+        case "imperious":
+          return `Consider ${subjectName} spoken for. ${demandText}, and spare both courts the formalities of escalation.`;
+        case "blustering":
+          return `Back away from ${subjectName} now. Ignore this and we will answer with a heavier hand than you expect.`;
+        case "expansionist":
+          return `We are already moving on ${subjectName}. ${demandText} if you would rather meet our timetable by pigeon than by fleet.`;
+        default:
+          return `Leave ${subjectName} alone and we may avoid a larger contest.`;
+      }
+    }
+
+    if (intent === "offer") {
+      switch (voiceSeed) {
+        case "opportunistic":
+          return `A quiet frontier is still cheaper than a loud one. We can ${offerText} if you prefer leverage to remain indirect.`;
+        case "deliberate":
+          return `We would prefer order over waste. ${offerText}, and let distance do the cooling for us.`;
+        default:
+          return `There is still room to keep this limited. We can ${offerText}.`;
+      }
+    }
+
+    switch (voiceSeed) {
+      case "deliberate":
+        return `We are watching ${subjectName} closely and would prefer to understand your intent before the frontier hardens.`;
+      case "opportunistic":
+        return `Before either side commits too much around ${subjectName}, tell us whether you are shaping a claim or merely screening it.`;
+      default:
+        return `${factionDefinition(senderFactionId)?.name ?? translateFactionId(senderFactionId)} is seeking clarity about ${subjectName}.`;
+    }
+  }
+
+  function renderDiplomaticImplication(senderFactionId, intent, leverage) {
+    const senderName = translateFactionId(senderFactionId);
+
+    if (intent === "threaten") {
+      if (leverage === "high") {
+        return `Envoy Tal reads this as pressure from strength. ${senderName} thinks distance and force let them set the terms unless we answer quickly.`;
+      }
+
+      if (leverage === "low") {
+        return `Envoy Tal reads this as a testing threat. Even if the bluff is thin, it marks where ${senderName} wants our attention pinned.`;
+      }
+
+      return `Envoy Tal reads this as a probe of resolve. ${senderName} is trying to move our reserve by pigeon before ships have to do the work.`;
+    }
+
+    if (intent === "offer") {
+      return leverage === "high"
+        ? `Envoy Tal reads this as terms offered from advantage. The deal matters less than what ${senderName} thinks we are too pressed to refuse.`
+        : `Envoy Tal reads this as an information play. Even a soft offer can reveal what ${senderName} wants us to stop watching.`;
+    }
+
+    return `Envoy Tal treats this as reconnaissance by conversation. The wording matters, but the real signal is which system ${senderName} chose to make legible.`;
+  }
+
+  function buildDiplomaticDispatchItem(report) {
+    const packetType = typeof report?.content?.packetType === "string" ? report.content.packetType : null;
+    const senderFactionId = typeof report?.content?.senderFactionId === "string" ? report.content.senderFactionId : null;
+    if (report?.type !== "dispatch" || packetType !== "diplomatic" || !senderFactionId) {
+      return null;
+    }
+
+    const directives = parseDispatchEntries(report.content.entries);
+    const leverage = senderLeverageAgainstSeat(senderFactionId);
+    const intent = normalizeDiplomaticIntent(directives.intent, leverage);
+    const voiceSeed = diplomaticVoiceSeed(senderFactionId);
+    const voiceLabel = diplomaticVoiceLabel(intent, voiceSeed);
+    const tone = diplomaticItemTone(intent, leverage);
+    const destinationSystemId =
+      typeof report.content.destinationSystemId === "string"
+        ? report.content.destinationSystemId
+        : currentSeat.value?.faction.homeSystemId;
+    const originName = report.sourceSystemId ? translateSystemId(report.sourceSystemId) : "unknown origin";
+    const destinationName = destinationSystemId ? translateSystemId(destinationSystemId) : "unknown destination";
+    const message = renderDiplomaticMessage(senderFactionId, directives, intent, voiceSeed, leverage);
+
+    return {
+      id: `dispatch:${report.id}`,
+      date: report.availableDate,
+      kicker: "Diplomatic pigeon",
+      title: `${translateFactionId(senderFactionId)} sent a ${voiceLabel.toLowerCase()} pigeon`,
+      summary: `Delivered from ${originName} to ${destinationName}. ${message}`,
+      analysis: renderDiplomaticImplication(senderFactionId, intent, leverage),
+      tone,
+      advisorId: "envoy",
+      advisorName: advisorProfile("envoy").advisorName,
+      advisorRole: advisorProfile("envoy").role,
+      advisorSource: "Diplomatic signal",
+      sourceLine: `${translateFactionId(senderFactionId)} · ${voiceLabel}`,
+      senderFactionId,
+      voiceLabel,
+    };
+  }
+
+  const diplomaticDispatchItems = computed(() =>
+    sortReportsByDate(
+      currentSeatReports.value
+        .map((report) => buildDiplomaticDispatchItem(report))
+        .filter(Boolean),
+    ),
+  );
+
+  const diplomaticInboxItems = computed(() =>
+    diplomaticDispatchItems.value.map((item) => {
+      const isFollowUp = Boolean(ui.planner.followUpReportsById?.[item.id]);
+      const isArchived = Boolean(ui.planner.archivedReportsById?.[item.id]);
+      const queueStateLabel =
+        isFollowUp ? "Follow-up"
+        : isArchived ? "Archived"
+        : "Open";
+      const queueStateSeverity =
+        isFollowUp ? "warn"
+        : isArchived ? "secondary"
+        : "success";
+
+      return {
+        ...item,
+        queueStateLabel,
+        queueStateSeverity,
+      };
+    }),
+  );
+
   const rawFeedItems = computed(() => {
     if (!currentSeat.value || !world.result) {
       return [];
@@ -2120,8 +2445,11 @@ function effectiveMass(ships, cargoSalt, metals) {
       }
     }
 
-    const combined = [...pendingProbeItems, ...items];
-    return combined.slice(0, 60);
+    return sortReportsByDate([
+      ...diplomaticDispatchItems.value,
+      ...pendingProbeItems,
+      ...items,
+    ]).slice(0, 60);
   });
 
   const feedItems = computed(() =>
@@ -3164,6 +3492,15 @@ function effectiveMass(ships, cargoSalt, metals) {
       recentSignalsByFaction.set(factionId, current);
     };
 
+    for (const item of diplomaticDispatchItems.value) {
+      noteSignal(
+        item.senderFactionId,
+        item.tone === "danger" || item.tone === "warn" ? "hostile" : "diplomatic",
+        item.date,
+        item.summary,
+      );
+    }
+
     for (const line of world.result?.log ?? []) {
       const parsed = parseLogEntry(line);
       if (!parsed) {
@@ -3874,6 +4211,7 @@ function effectiveMass(ships, cargoSalt, metals) {
     feedItems,
     archivedReportItems,
     notebookTodoItems,
+    diplomaticInboxItems,
     reconSummary,
     orderBrief,
     orderSubmission,

@@ -408,4 +408,5 @@ export interface SimulationResult {
   passed: boolean;
   snapshots: SimulationSnapshot[];
   log: string[];
+  reportsByFactionId: Record<string, Report[]>;
 }

@@ -10,6 +10,8 @@ The repo now includes a browser command table for driving the simulator against 
 
 This local server uses the compiled worker for `/api/*` routes and serves the static UI from [`public/`](/Users/joshuaevenson/Documents/GitHub/dead_reckoning/public). For Cloudflare deployment, [`wrangler.jsonc`](/Users/joshuaevenson/Documents/GitHub/dead_reckoning/wrangler.jsonc) is configured to serve the same static assets.
 
+The `Advisors` workspace now includes a dedicated diplomatic inbox. Delivered pigeons show up as first-class advisor items with sender attribution, delivery timing, and deterministic consequence framing instead of being reduced to stance summaries alone.
+
 ## Locked State Schema
 
 This section defines the canonical game state shape for the real game. Any change to this schema should be discussed before implementation.
@@ -369,6 +371,8 @@ Their purpose is not only flavor. They should also teach strategic patterns by s
 * resource shortages
 * likely expansion routes
 * rival personality and doctrine
+
+The symbolic baseline should already support distinct diplomatic voice. Even with AI disabled, a delivered pigeon should render through faction-profile and leverage-aware templates so threatening, conciliatory, opportunistic, or probing tones remain legible in the command table.
 
 ⸻
 
@@ -2255,28 +2259,13 @@ The baseline path should always land first or at least be landable independently
 
 ### Phase 1 Work Items: Advisor Surface And Opening Loop
 
-#### `AO-01` Diplomatic Pigeons Inbox
-
-* `Outcome`: diplomatic pigeons appear as first-class advisor items rather than only implied stance summaries
-* `Scope`: add pigeon-specific item types, rendering, attribution, and inbox state in the advisor pane
-* `Done when`: a scenario can deliver at least one diplomatic pigeon with its sender, timing, and immediate strategic implication visible in the command table
-* `Dependencies`: current advisor feed and report attribution baseline
-
-#### `AO-02` Faction Voice For Diplomacy
-
-* `Outcome`: diplomatic pigeons read with distinct faction voices such as threatening, conciliatory, opportunistic, or deceptive
-* `Symbolic baseline`: define a minimal tone-tag schema from current faction metadata and situational leverage, then render pigeons through deterministic phrase banks or templates
-* `AI overlay`: optionally paraphrase or deepen those same messages while preserving sender, intent, leverage, and tone tags
-* `Done when`: the same diplomatic event can render with materially different voice depending on faction metadata and leverage state even with AI disabled
-* `Dependencies`: `AO-01`, `SYS-02`
-
 #### `AO-03` Advisor Disagreement
 
 * `Outcome`: multiple advisors can interpret the same report or pigeon differently
 * `Symbolic baseline`: add a shared source item with multiple advisor takes, using explicit heuristics, stances, and confidence rules even before deeper political blocs exist
 * `AI overlay`: optionally rewrite or sharpen the disagreement while staying within the same advisor positions and confidence bounds
 * `Done when`: at least one scenario reliably shows two advisors disagreeing about the same signal and the UI presents both readings side by side in AI-off mode
-* `Dependencies`: `AO-01`, `SYS-02`
+* `Dependencies`: current diplomatic pigeon inbox baseline, `SYS-02`
 
 #### `AO-04` Causal Explanation Pass
 

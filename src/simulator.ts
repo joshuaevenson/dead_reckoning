@@ -220,6 +220,9 @@ class SimulationEngine {
       passed: assertions.every((assertion) => assertion.pass),
       snapshots: this.snapshots,
       log: this.log,
+      reportsByFactionId: Object.fromEntries(
+        [...this.factions.entries()].map(([factionId, faction]) => [factionId, faction.reports]),
+      ),
     };
   }
 
@@ -308,6 +311,7 @@ class SimulationEngine {
         content: {
           packetType: pigeon.dispatch.packetType,
           senderFactionId: pigeon.dispatch.senderFactionId,
+          destinationSystemId: pigeon.destinationSystemId,
           entries: pigeon.dispatch.entries,
         },
       };
