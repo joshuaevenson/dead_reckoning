@@ -651,6 +651,8 @@ body {
 }
 
 .reports-main-stack,
+.reports-summary-stack,
+.reports-capability-section,
 .reports-brief-section,
 .reports-queue-section {
   min-height: 0;
@@ -658,13 +660,38 @@ body {
   gap: 10px;
 }
 
+.reports-main-stack {
+  grid-template-rows: fit-content(26rem) minmax(16rem, 1fr);
+  align-content: start;
+  overflow: hidden;
+}
+
+.reports-summary-stack {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+.reports-capability-section,
 .reports-brief-section {
+  min-height: 0;
   padding: 12px;
   border: 1px solid rgba(111, 213, 255, 0.16);
   border-radius: 16px;
   background:
     linear-gradient(135deg, rgba(111, 213, 255, 0.07), rgba(255, 255, 255, 0.015)),
     rgba(7, 15, 24, 0.78);
+  overflow: hidden;
+}
+
+.reports-capability-section {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.reports-brief-section {
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .reports-brief-copy {
@@ -672,20 +699,47 @@ body {
   line-height: 1.4;
 }
 
+.reports-capability-body {
+  min-height: 0;
+  display: grid;
+  gap: 10px;
+  overflow: auto;
+  padding-right: 4px;
+  align-content: start;
+}
+
+.reports-capability-summary {
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.reports-capability-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-content: start;
+}
+
+.reports-capability-card,
+.reports-brief-card {
+  min-width: 0;
+  align-content: start;
+}
+
 .reports-brief-list {
+  min-height: 0;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
-}
-
-.reports-brief-card {
-  min-width: 0;
+  overflow: auto;
+  padding-right: 4px;
   align-content: start;
 }
 
 .reports-queue-section {
   min-height: 0;
   grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .reports-side-panel {
@@ -1086,6 +1140,66 @@ body {
 
 .feed-card-compact {
   padding: 10px 12px;
+}
+
+.reports-feed-group {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.reports-feed-badges,
+.reports-note-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.reports-note-grid {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.reports-note-grid-split {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.reports-note-card {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(120, 180, 255, 0.12);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0)),
+    rgba(4, 11, 19, 0.56);
+}
+
+.reports-note-top {
+  margin-bottom: 6px;
+}
+
+.reports-note-title {
+  margin-top: 4px;
+  font-size: 0.96rem;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.reports-note-causes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.reports-note-reasoning {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
 }
 
 .feed-card-top {
@@ -1523,6 +1637,7 @@ body {
   }
 
   .map-topline,
+  .reports-capability-grid,
   .reports-brief-list,
   .form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1555,7 +1670,7 @@ body {
   .workspace-diplomacy-page,
   .workspace-reports-page {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
   }
 
   .workspace-map-page {
@@ -1564,6 +1679,8 @@ body {
 
   .map-main-layout,
   .notebook-layout,
+  .reports-summary-stack,
+  .reports-capability-grid,
   .reports-brief-list,
   .form-grid,
   .operations-summary-grid,

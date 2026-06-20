@@ -12,6 +12,12 @@ This local server uses the compiled worker for `/api/*` routes and serves the st
 
 The `Advisors` workspace now includes a dedicated diplomatic inbox. Delivered pigeons show up as first-class advisor items with sender attribution, delivery timing, and deterministic consequence framing instead of being reduced to stance summaries alone.
 
+The `Advisors` workspace is intentionally advisor-only. It surfaces briefs, notes, dispatches, and pigeons, while hard world facts such as system ownership, probe coverage, stockpiles, and starlane details are only available on the galaxy map. Looking up the real picture should cost attention and time instead of being flattened into the same board as the advice.
+
+Strategic markings now feed both the notebook and the council inbox. If a marked `explore`, `expand`, `threat`, `screen`, `economic_priority`, or `future_link` system becomes the site or source of meaningful pressure, reinforcement, recon, or opportunity movement, the resulting advisor notes call that out explicitly and include a deterministic follow-up prompt.
+
+The current repo also runs in an explicit AI-off mode. The worker exposes a runtime capability contract and the command table surfaces that baseline directly: advisor notes, daily briefs, after-action explanations, diplomatic pigeons, and the opening loop all run through deterministic composition, while current faction identity comes from scenario-authored faction and commander profile data rather than runtime text generation.
+
 ## Locked State Schema
 
 This section defines the canonical game state shape for the real game. Any change to this schema should be discussed before implementation.
@@ -331,6 +337,98 @@ Important design rules:
 * learning when to trust which advisor is itself a minor skill the player develops
 
 Conflicting advice is a feature, not a defect, as long as each advisor can explain the reasoning behind the recommendation.
+
+### Information Ownership And Council Desk
+
+The command layer should be built around explicit actors, even before those actors are implemented as fully autonomous simulation loops.
+
+The key layering should be:
+
+* world truth
+* delivered evidence
+* actor-specific belief state
+* actor notes to the player
+
+Important design rules:
+
+* world truth remains canonical simulation state
+* delivered evidence is the canonical substrate for player knowledge
+* each actor should only see the evidence that plausibly reached them through their role, post, fleet, or courier chain
+* actors may infer, suspect, exaggerate, understate, or miss implications, but they should not silently inherit hidden information from other actors
+* AI chat with an advisor or commander should be grounded in that actor's own evidence and belief state, not omniscient world truth
+
+Advisors and commanders should be distinct:
+
+* advisors synthesize across domains such as military risk, reconnaissance, logistics, and diplomacy
+* commanders speak from fleets, fronts, probes, garrisons, or local theaters that they directly supervise
+* multiple actors may respond to the same source item and disagree honestly
+* if an actor did not receive a source, they should not talk as though they did
+
+The `Advisors` pane should feel like a council inbox rather than a raw event feed:
+
+* the primary surface should be advisor notes and commander dispatches
+* hard world facts such as system ownership, probe coverage, stockpiles, and starlane details belong to the galaxy map, not the advisor desk
+* cross-checking the map against what advisors say should be a real part of play rather than an automatically collapsed convenience
+* the UI should not loudly label every sentence as fact, inference, rumor, or posture
+* part of the game is learning who tends to overreact, who sees logistics clearly, who understates danger, and who is worth trusting on which topic
+
+Minimal first-pass schema sketch:
+
+* `Evidence`
+  * `id`
+  * `date`
+  * `event_type`
+  * `title`
+  * `summary`
+  * `tone`
+  * optional `source_actor_id`
+  * optional `source_actor_role`
+  * optional `friendly_source`
+* `Actor`
+  * `id`
+  * `kind` such as `advisor` or `commander`
+  * `name`
+  * `role`
+  * `specialty`
+* `Belief`
+  * `id`
+  * `actor_id`
+  * `evidence_id`
+  * `access` such as `direct`, `briefed`, or `received`
+  * `posture`
+  * `summary`
+  * `reasoning`
+* `ActorNote`
+  * `id`
+  * `actor_id`
+  * `source_evidence_id`
+  * `title`
+  * `summary`
+  * `analysis`
+  * `tone`
+
+Minimal example flow:
+
+1. A friendly probe launches toward Tau Ceti.
+2. The game records one `Evidence` item for that launch.
+3. The recon commander gets a `Belief` with `access = direct` because the launch came through their own chain.
+4. The spymaster gets a `Belief` with `access = briefed` because the council received the report but did not originate it.
+5. The recon commander writes a note about keeping the lane quiet until the probe settles.
+6. The spymaster writes a note about warning time and collapsing uncertainty.
+7. The council inbox shows both notes, while the smaller source ledger still shows the underlying launch.
+
+The first disagreement pass should also be symbolic and explicit:
+
+* one hostile signal can now yield multiple advisor takes built from the same shared evidence record
+* each take should carry a deterministic stance and confidence label rather than pretending the council has a single unanimous reading
+* those competing takes should be shown together in the inbox so the player reads them as one contested signal, not unrelated report cards
+* commanders still only speak when the evidence came through a direct friendly chain rather than general council receipt
+
+The first causal explanation pass should stay symbolic too:
+
+* evidence records can carry explicit causal tags such as probe cover, late probe, lane blockade, pinned approach, stripped reserve, local overmatch, capture pressure, and open claim window
+* advisor and commander notes should cite those drivers directly rather than hiding them behind generic consequence prose
+* battle and logistics notes should derive those causes from snapshots and route history, not from actor omniscience or hand-authored exceptions
 
 ### Strategic Markings
 
@@ -2194,8 +2292,12 @@ These pieces are now implemented in the local command table and should be treate
 * the default landing page is now the `Advisors` pane rather than the galactic map
 * the daily loop is framed as one opportunity, one threat, and one lesson
 * the daily brief is surfaced as a distinct morning council brief
-* the live signal queue is now presented as advisor interpretations rather than raw generic feed items
-* report items carry named advisor attribution and consequence-oriented analysis
+* the main desk is now moving toward a council inbox, with actor-authored notes taking priority over raw event presentation
+* first-pass canonical council schemas now exist for evidence, actors, beliefs, notes, and source-ledger items
+* council note composition now runs through a shared deterministic pass rather than only ad hoc UI decoration
+* hostile signals can now produce split advisor readings with explicit stance and confidence tags presented side by side
+* battle and logistics notes now cite deterministic driver tags such as probe cover, lane blockade, pinned approach, local overmatch, and stripped reserve
+* report items carry named council attribution and consequence-oriented analysis
 * the notebook includes a strategy board and council readout
 * the player can mark systems with strategic intent such as `explore`, `expand`, `threat`, `screen`, `economic_priority`, and `future_link`
 * advisor suggestions already react to those strategic markings
@@ -2222,19 +2324,12 @@ The baseline path should always land first or at least be landable independently
 
 ### Phase 0 Foundation Contracts: Symbolic-First Architecture
 
-#### `SYS-01` Fully Playable AI-Off Baseline
-
-* `Outcome`: the command table, reports, diplomacy, identity, and opening loop can all function without any AI integration
-* `Scope`: identify every player-facing system that currently assumes generated content and define the symbolic fallback path for it
-* `Done when`: the repo supports an explicit AI-disabled mode where the product remains coherent and useful rather than feature-gated
-* `Dependencies`: none
-
 #### `SYS-02` Canonical Symbolic Schemas
 
 * `Outcome`: advisor items, diplomatic pigeons, recap entries, doctrine proposals, faction profiles, and candidate plans all have canonical structured schemas owned by deterministic code
 * `Scope`: define the structures that symbolic composition and AI enrichment will both use
 * `Done when`: the UI and tests consume stable structured objects rather than format-specific raw strings
-* `Dependencies`: `SYS-01`
+* `Dependencies`: explicit AI-off baseline
 
 #### `SYS-03` Overlay Function Boundaries
 
@@ -2258,30 +2353,6 @@ The baseline path should always land first or at least be landable independently
 * `Dependencies`: `SYS-02`, `SYS-04`
 
 ### Phase 1 Work Items: Advisor Surface And Opening Loop
-
-#### `AO-03` Advisor Disagreement
-
-* `Outcome`: multiple advisors can interpret the same report or pigeon differently
-* `Symbolic baseline`: add a shared source item with multiple advisor takes, using explicit heuristics, stances, and confidence rules even before deeper political blocs exist
-* `AI overlay`: optionally rewrite or sharpen the disagreement while staying within the same advisor positions and confidence bounds
-* `Done when`: at least one scenario reliably shows two advisors disagreeing about the same signal and the UI presents both readings side by side in AI-off mode
-* `Dependencies`: current diplomatic pigeon inbox baseline, `SYS-02`
-
-#### `AO-04` Causal Explanation Pass
-
-* `Outcome`: advisor analysis cites concrete causes such as pinned fleets, specific blockades, late probes, or stripped reserves
-* `Symbolic baseline`: derive a small explicit cause vocabulary from simulation history and thread it into report generation and templates
-* `AI overlay`: optionally turn those same causes into more natural prose without changing the underlying cited causes
-* `Done when`: battle and logistics reports cite real causal tags from simulation state rather than generic consequence text even with AI disabled
-* `Dependencies`: `SYS-02`, `SYS-03`
-
-#### `AO-05` Strategic Marking Callbacks
-
-* `Outcome`: reports and advisor notes explicitly reference the player's marked `explore`, `expand`, `threat`, `screen`, `economic_priority`, and `future_link` systems
-* `Symbolic baseline`: connect strategic markings into report ranking, wording, and follow-up prompts through deterministic matching rules
-* `AI overlay`: optionally improve phrasing or prioritization while honoring the same marked-system signals
-* `Done when`: a marked system receiving reinforcements, threat activity, or opportunity pressure is called out directly in the advisor surface in AI-off mode
-* `Dependencies`: `AO-04`
 
 #### `AO-06` After-Action Explanations
 
@@ -2311,7 +2382,7 @@ The baseline path should always land first or at least be landable independently
 * `Symbolic baseline`: define heuristics for daily brief assembly and back them with scenarios that stress weak openings
 * `AI overlay`: optionally improve wording, condensation, and framing while preserving the selected three-beat structure
 * `Done when`: regression scenarios show the daily brief consistently contains all three beats without obvious filler in AI-off mode
-* `Dependencies`: `AO-05`, `AO-06`, `AO-07`
+* `Dependencies`: `AO-06`, `AO-07`
 
 #### `AO-10` Advisor Reliability Decision
 

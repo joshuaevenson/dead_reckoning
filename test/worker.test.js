@@ -4,6 +4,17 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import worker from "../dist/index.js";
 
+test("worker health exposes the explicit AI-off runtime contract", async () => {
+  const response = await worker.fetch(
+    new Request("https://example.com/api/health"),
+  );
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.runtimeCapabilities.ai.mode, "off");
+  assert.equal(body.runtimeCapabilities.surfaces.some((surface) => surface.id === "diplomacy"), true);
+});
+
 test("worker lists bundled scenarios", async () => {
   const response = await worker.fetch(
     new Request("https://example.com/api/scenarios"),
@@ -42,6 +53,8 @@ test("worker /simulate returns scenario result", async () => {
   const body = await response.json();
   assert.equal(body.passed, true);
   assert.equal(body.scenario, "economy_frontier_claim");
+  assert.equal(body.runtimeCapabilities.ai.mode, "off");
+  assert.equal(body.runtimeCapabilities.surfaces.some((surface) => surface.id === "opening_loop"), true);
 });
 
 test("worker /simulate supports building probes from metal and launching multiple probes with salt", async () => {

@@ -23,6 +23,32 @@ export type ReportType =
   | "combat"
   | "dispatch";
 
+export type CouncilTone =
+  | "info"
+  | "warn"
+  | "danger"
+  | "success"
+  | "secondary"
+  | "contrast";
+
+export type CouncilActorKind = "advisor" | "commander";
+
+export type CouncilBeliefAccess = "direct" | "briefed" | "received";
+
+export type CouncilBeliefPosture = "urgent" | "watchful" | "steady" | "opportunity";
+
+export type CouncilBeliefConfidence = "high" | "medium" | "low";
+
+export type CouncilCauseKey =
+  | "probe_cover"
+  | "late_probe"
+  | "route_blockade"
+  | "intercepted_approach"
+  | "reserve_stripped"
+  | "local_overmatch"
+  | "capture_pressure"
+  | "open_claim_window";
+
 export type ComparisonOperator = ">" | ">=" | "<" | "<=" | "==" | "!=";
 
 export type TradeFocus =
@@ -35,6 +61,10 @@ export type CommanderProfileKind =
   | "chatty_frontier"
   | "napoleonic"
   | "bad_commander";
+
+export type RuntimeAiMode = "off";
+
+export type RuntimeCapabilityBaseline = "symbolic" | "scenario_seeded";
 
 export interface SystemPosition {
   x: number;
@@ -147,6 +177,127 @@ export interface Report {
   initialHeading?: string;
   possibleDestinations?: string[];
   content: Record<string, unknown>;
+}
+
+export interface CouncilEvidence {
+  id: string;
+  date: string;
+  eventType: string;
+  kicker: string;
+  title: string;
+  summary: string;
+  analysis: string;
+  tone: CouncilTone;
+  advisorSource?: string;
+  sourceLine?: string;
+  senderFactionId?: string;
+  voiceLabel?: string;
+  friendlySource?: boolean;
+  sourceActorId?: string | null;
+  sourceActorName?: string | null;
+  sourceActorRole?: string | null;
+  causes?: CouncilCause[];
+  causeSummary?: string;
+  strategicCallbacks?: CouncilStrategicCallback[];
+  strategicPriority?: number;
+}
+
+export interface CouncilCause {
+  key: CouncilCauseKey;
+  label: string;
+  detail: string;
+  severity: CouncilTone;
+}
+
+export interface CouncilStrategicCallback {
+  systemId: string;
+  systemName: string;
+  markingValue: string;
+  markingLabel: string;
+  severity: CouncilTone;
+  headline: string;
+  summary: string;
+  prompt: string;
+  priority: number;
+}
+
+export interface CouncilActor {
+  id: string;
+  kind: CouncilActorKind;
+  label: string;
+  name: string;
+  role: string;
+  specialty: string;
+}
+
+export interface CouncilBelief {
+  id: string;
+  actorId: string;
+  evidenceId: string;
+  access: CouncilBeliefAccess;
+  posture: CouncilBeliefPosture;
+  stance: string;
+  stanceLabel: string;
+  confidence: CouncilBeliefConfidence;
+  confidenceLabel: string;
+  confidenceSeverity: CouncilTone;
+  summary: string;
+  reasoning: string;
+  causeSummary?: string;
+}
+
+export interface CouncilNote {
+  id: string;
+  date: string;
+  kicker: string;
+  title: string;
+  summary: string;
+  analysis: string;
+  tone: CouncilTone;
+  stance: string;
+  stanceLabel: string;
+  confidence: CouncilBeliefConfidence;
+  confidenceLabel: string;
+  confidenceSeverity: CouncilTone;
+  reasoning: string;
+  causes?: CouncilCause[];
+  causeSummary?: string;
+  actorId: string;
+  actorKind: CouncilActorKind;
+  actorLabel: string;
+  actorName: string;
+  actorRole: string;
+  advisorId: string;
+  advisorName: string;
+  advisorRole: string;
+  advisorSource?: string;
+  sourceLine?: string;
+  senderFactionId?: string;
+  voiceLabel?: string;
+  sourceEvidenceId: string;
+  sourceTitle: string;
+  sourceSummary: string;
+  strategicCallbacks?: CouncilStrategicCallback[];
+  strategicPriority?: number;
+}
+
+export interface CouncilSourceLedgerItem {
+  id: string;
+  date: string;
+  kicker: string;
+  title: string;
+  summary: string;
+  tone: CouncilTone;
+  sourceLine?: string;
+  strategicCallbacks?: CouncilStrategicCallback[];
+  strategicPriority?: number;
+}
+
+export interface CouncilCompositionResult {
+  actors: CouncilActor[];
+  beliefs: CouncilBelief[];
+  notes: CouncilNote[];
+  sourceLedger: CouncilSourceLedgerItem[];
 }
 
 export interface FactionState {
@@ -390,6 +541,23 @@ export interface SimulationSnapshot {
   factions: Record<string, SnapshotFactionView>;
 }
 
+export interface RuntimeCapabilitySurface {
+  id: string;
+  label: string;
+  baseline: RuntimeCapabilityBaseline;
+  summary: string;
+}
+
+export interface RuntimeCapabilities {
+  summary: string;
+  ai: {
+    mode: RuntimeAiMode;
+    label: string;
+    summary: string;
+  };
+  surfaces: RuntimeCapabilitySurface[];
+}
+
 export interface AssertionResult {
   at: string;
   path: string;
@@ -409,4 +577,5 @@ export interface SimulationResult {
   snapshots: SimulationSnapshot[];
   log: string[];
   reportsByFactionId: Record<string, Report[]>;
+  runtimeCapabilities?: RuntimeCapabilities;
 }

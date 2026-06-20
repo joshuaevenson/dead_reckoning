@@ -1,4 +1,8 @@
 import { computed, reactive, toRaw, watch } from "vue";
+import {
+  composeCouncilStateFromEvidence,
+  getCouncilActorProfile,
+} from "../../src/council.js";
 
 const SHIP_MASS = 5;
 const PROBE_COST_SALT = 2;
@@ -103,28 +107,65 @@ const STRATEGIC_MARKING_OPTIONS = [
 const STRATEGIC_MARKINGS_BY_VALUE = new Map(
   STRATEGIC_MARKING_OPTIONS.map((option) => [option.value, option]),
 );
-const ADVISOR_PROFILES = {
-  marshal: {
-    advisorId: "marshal",
-    advisorName: "Marshal Hale",
-    role: "Fleet Consequences",
+const ADVISOR_DESK_POLICY = Object.freeze({
+  advisorOnly: true,
+  mapOwnsWorldIntel: true,
+  showDiplomaticInbox: true,
+  showArchive: true,
+  showRawSignals: false,
+  showReconSummary: false,
+  showFocusedSystem: false,
+  summary: "The advisor desk only carries authored advice, dispatches, and diplomatic messages.",
+  mapGuidance:
+    "Use the galaxy map for ownership, probe coverage, stockpiles, starlanes, and selected-system facts.",
+});
+const DEFAULT_RUNTIME_CAPABILITIES = Object.freeze({
+  summary:
+    "The current product runs in an explicit AI-off mode. Advisor notes, reports, diplomacy, opening guidance, and faction identity all resolve through deterministic data, heuristics, and templates.",
+  ai: {
+    mode: "off",
+    label: "AI Off",
+    summary:
+      "No model calls are required for the current command table. The worker and UI run entirely on deterministic simulation, stored profiles, and symbolic composition.",
   },
-  spymaster: {
-    advisorId: "spymaster",
-    advisorName: "Spymaster Vey",
-    role: "Reconnaissance",
-  },
-  steward: {
-    advisorId: "steward",
-    advisorName: "Steward Sen",
-    role: "Logistics",
-  },
-  envoy: {
-    advisorId: "envoy",
-    advisorName: "Envoy Tal",
-    role: "Signals",
-  },
-};
+  surfaces: [
+    {
+      id: "advisor_desk",
+      label: "Advisor Desk",
+      baseline: "symbolic",
+      summary:
+        "Council evidence, beliefs, and split advisor takes are derived from simulation reports and role-specific template logic.",
+    },
+    {
+      id: "reports",
+      label: "Reports",
+      baseline: "symbolic",
+      summary:
+        "Morning briefs, council inbox items, source ledgers, and after-action explanations are composed without generated prose.",
+    },
+    {
+      id: "diplomacy",
+      label: "Diplomacy",
+      baseline: "symbolic",
+      summary:
+        "Delivered pigeons and diplomatic stance boards use commander profiles, leverage rules, and deterministic voice templates.",
+    },
+    {
+      id: "identity",
+      label: "Faction Identity",
+      baseline: "scenario_seeded",
+      summary:
+        "Current faction identity comes from scenario-authored faction names and commander profiles rather than runtime text generation.",
+    },
+    {
+      id: "opening_loop",
+      label: "Opening Loop",
+      baseline: "symbolic",
+      summary:
+        "The opportunity, threat, and lesson brief is assembled from map state, markings, reports, diplomacy, and probe coverage heuristics.",
+    },
+  ],
+});
 
 function defaultProductionLine(index) {
   return {
@@ -293,6 +334,50 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+function cloneRuntimeCapabilities(input = DEFAULT_RUNTIME_CAPABILITIES) {
+  const source = input && typeof input === "object" ? input : DEFAULT_RUNTIME_CAPABILITIES;
+  const aiSource = source.ai && typeof source.ai === "object" ? source.ai : DEFAULT_RUNTIME_CAPABILITIES.ai;
+  const surfaces = Array.isArray(source.surfaces) && source.surfaces.length > 0
+    ? source.surfaces
+    : DEFAULT_RUNTIME_CAPABILITIES.surfaces;
+
+  return {
+    summary:
+      typeof source.summary === "string"
+        ? source.summary
+        : DEFAULT_RUNTIME_CAPABILITIES.summary,
+    ai: {
+      mode: aiSource.mode === "off" ? "off" : DEFAULT_RUNTIME_CAPABILITIES.ai.mode,
+      label:
+        typeof aiSource.label === "string"
+          ? aiSource.label
+          : DEFAULT_RUNTIME_CAPABILITIES.ai.label,
+      summary:
+        typeof aiSource.summary === "string"
+          ? aiSource.summary
+          : DEFAULT_RUNTIME_CAPABILITIES.ai.summary,
+    },
+    surfaces: surfaces.map((surface) => ({
+      id:
+        typeof surface?.id === "string"
+          ? surface.id
+          : "unknown",
+      label:
+        typeof surface?.label === "string"
+          ? surface.label
+          : "Unknown Surface",
+      baseline:
+        surface?.baseline === "scenario_seeded"
+          ? "scenario_seeded"
+          : "symbolic",
+      summary:
+        typeof surface?.summary === "string"
+          ? surface.summary
+          : "",
+    })),
+  };
+}
+
 function cloneScenario(scenario) {
   const rawScenario = toRaw(scenario);
 
@@ -319,11 +404,26 @@ function cloneReportItem(item) {
     sourceLine: item.sourceLine,
     senderFactionId: item.senderFactionId,
     voiceLabel: item.voiceLabel,
+    actorId: item.actorId,
+    actorKind: item.actorKind,
+    actorLabel: item.actorLabel,
+    actorName: item.actorName,
+    actorRole: item.actorRole,
+    sourceEvidenceId: item.sourceEvidenceId,
+    sourceTitle: item.sourceTitle,
+    sourceSummary: item.sourceSummary,
+    strategicCallbacks: item.strategicCallbacks ?? [],
+    strategicPriority: item.strategicPriority ?? 0,
   };
 }
 
 function sortReportsByDate(items) {
   return [...items].sort((left, right) => {
+    const priorityOrder = Number(right.strategicPriority ?? 0) - Number(left.strategicPriority ?? 0);
+    if (priorityOrder !== 0) {
+      return priorityOrder;
+    }
+
     const dateOrder = String(right.date ?? "").localeCompare(String(left.date ?? ""));
     if (dateOrder !== 0) {
       return dateOrder;
@@ -342,94 +442,82 @@ function strategicMarkingDefinition(value) {
 }
 
 function advisorProfile(advisorId) {
-  return ADVISOR_PROFILES[advisorId] ?? ADVISOR_PROFILES.envoy;
+  return {
+    advisorId,
+    advisorName: getCouncilActorProfile(advisorId).name,
+    role: getCouncilActorProfile(advisorId).role,
+  };
 }
 
-function advisorProfileForReport(item) {
-  if (!item?.kicker) {
-    return advisorProfile("envoy");
-  }
-
-  if (
-    item.kicker === "Recon launched"
-    || item.kicker === "Recon on station"
-  ) {
-    return advisorProfile("spymaster");
-  }
-
-  if (
-    item.kicker === "Trade signal"
-    || item.kicker === "Supply convoy"
-    || item.kicker === "Frontier claim"
-    || item.kicker === "Expansion burn"
-    || item.kicker === "Reinforcement burn"
-  ) {
-    return advisorProfile("steward");
-  }
-
-  if (
-    item.kicker === "Incoming threat"
-    || item.kicker === "Attack burn"
-    || item.kicker === "Blockade burn"
-    || item.kicker === "Battle report"
-    || item.kicker === "Control shift"
-    || item.kicker === "Arrival burn"
-  ) {
-    return advisorProfile("marshal");
-  }
-
-  return advisorProfile("envoy");
-}
-
-function advisorConsequenceForReport(item, profile) {
-  if (!item) {
-    return "";
-  }
-
-  switch (item.kicker) {
-    case "Recon launched":
-      return `${profile.advisorName} says the real gain is warning time: once the probe arrives, we stop defending every rumor at once.`;
-    case "Recon on station":
-      return `${profile.advisorName} says this closes a blind angle, which means future enemy burns here can be answered with commitment instead of guesswork.`;
-    case "Trade signal":
-      return `${profile.advisorName} reads this as compounding strength: quiet cargo runs often decide who can afford the decisive move later.`;
-    case "Supply convoy":
-      return `${profile.advisorName} reads endurance here. If the convoy lands cleanly, the target can absorb pressure longer than its fleet count alone suggests.`;
-    case "Blockade burn":
-      return `${profile.advisorName} warns that this is about lane control, not only local ships. If the blockade sticks, movement through the lane gets riskier and slower to answer.`;
-    case "Reinforcement burn":
-      return `${profile.advisorName} reads a posture shift. Reinforcements make the next fight cheaper for them and more expensive for anyone arriving late.`;
-    case "Expansion burn":
-    case "Frontier claim":
-      return `${profile.advisorName} says frontier gains snowball. A quiet claim today becomes extra salt, extra options, and harder eviction tomorrow.`;
-    case "Incoming threat":
-    case "Attack burn":
-      return `${profile.advisorName} frames this as tempo pressure. If we answer from the wrong reserve, the attacker chooses both the fight and the follow-up.`;
-    case "Battle report":
-      return `${profile.advisorName} says the lesson is not just who traded well, but who can replace losses first and keep control after the shooting stops.`;
-    case "Control shift":
-      return `${profile.advisorName} treats this as a consequence chain: once local control broke, ownership followed immediately and the surrounding lane picture changed with it.`;
-    case "Arrival burn":
-      return `${profile.advisorName} says arrivals matter because they pin choices. A force landing in place can force us to defend the system and the nearby lane at the same time.`;
-    default:
-      return item.analysis;
-  }
-}
-
-function withAdvisorContext(item) {
-  if (!item) {
-    return item;
-  }
-
-  const profile = advisorProfileForReport(item);
+function withCouncilDisplayContext(item) {
+  const actorProfile = getCouncilActorProfile(item?.actorId ?? item?.advisorId ?? "envoy");
   return {
     ...item,
-    advisorId: item.advisorId ?? profile.advisorId,
-    advisorName: item.advisorName ?? profile.advisorName,
-    advisorRole: item.advisorRole ?? profile.role,
-    advisorSource: item.advisorSource ?? item.kicker,
-    analysis: advisorConsequenceForReport(item, profile),
+    actorId: item?.actorId ?? item?.advisorId ?? actorProfile.id,
+    actorKind: item?.actorKind ?? actorProfile.kind,
+    actorLabel: item?.actorLabel ?? actorProfile.label,
+    actorName: item?.actorName ?? item?.advisorName ?? actorProfile.name,
+    actorRole: item?.actorRole ?? item?.advisorRole ?? actorProfile.role,
+    advisorId: item?.advisorId ?? item?.actorId ?? actorProfile.id,
+    advisorName: item?.advisorName ?? item?.actorName ?? actorProfile.name,
+    advisorRole: item?.advisorRole ?? item?.actorRole ?? actorProfile.role,
+    advisorSource: item?.advisorSource ?? item?.kicker,
+    stance: item?.stance ?? "read_the_signal",
+    stanceLabel: item?.stanceLabel ?? "Read the signal",
+    confidence: item?.confidence ?? "medium",
+    confidenceLabel: item?.confidenceLabel ?? "Medium confidence",
+    confidenceSeverity: item?.confidenceSeverity ?? "info",
+    reasoning: item?.reasoning ?? "",
+    causes: item?.causes ?? [],
+    causeSummary: item?.causeSummary ?? "",
+    sourceEvidenceId: item.sourceEvidenceId ?? item.id,
+    sourceTitle: item.sourceTitle ?? item.title,
+    sourceSummary: item.sourceSummary ?? item.summary,
+    strategicCallbacks: item?.strategicCallbacks ?? [],
+    strategicPriority: item?.strategicPriority ?? 0,
   };
+}
+
+function groupCouncilFeedItems(items) {
+  const groups = [];
+  const groupMap = new Map();
+
+  for (const item of items) {
+    const key = item.sourceEvidenceId ?? item.id;
+    let group = groupMap.get(key);
+
+    if (!group) {
+      group = {
+        id: key,
+        sourceEvidenceId: key,
+        date: item.date,
+        kicker: item.kicker,
+        title: item.sourceTitle ?? item.title,
+        summary: item.sourceSummary ?? item.summary,
+        tone: item.tone,
+        sourceLine: item.sourceLine ?? null,
+        notes: [],
+      };
+      groupMap.set(key, group);
+      groups.push(group);
+    }
+
+    group.notes.push(item);
+  }
+
+  return groups.map((group) => ({
+    ...group,
+    advisorCount: new Set(
+      group.notes
+        .filter((note) => note.actorKind === "advisor")
+        .map((note) => note.actorId),
+    ).size,
+    hasAdvisorDisagreement: new Set(
+      group.notes
+        .filter((note) => note.actorKind === "advisor")
+        .map((note) => note.actorId),
+    ).size > 1,
+  }));
 }
 
 function hasValidPosition(system) {
@@ -544,6 +632,9 @@ export function createCommandState(options = {}) {
     scenario: null,
     result: null,
   });
+  const runtime = reactive({
+    capabilities: cloneRuntimeCapabilities(),
+  });
 
   const ui = reactive({
     seatFactionId: null,
@@ -575,6 +666,7 @@ export function createCommandState(options = {}) {
   );
 
   const currentWorldDate = computed(() => world.result?.endDate ?? null);
+  const runtimeCapabilities = computed(() => runtime.capabilities);
 
   const systemsMap = computed(
     () => new Map((world.scenario?.systems ?? []).map((system) => [system.id, system])),
@@ -974,6 +1066,189 @@ function effectiveMass(ships, cargoSalt, metals) {
     economic: strategicMarkingRows.value.filter((row) => row.value === "economic_priority").length,
     futureLink: strategicMarkingRows.value.filter((row) => row.value === "future_link").length,
   }));
+
+  function strategicMarkingRowForSystem(systemId) {
+    if (!systemId) {
+      return null;
+    }
+
+    return strategicMarkingRows.value.find((row) => row.systemId === systemId) ?? null;
+  }
+
+  function strategicCallbackPriority(markingValue, eventType) {
+    const markingWeights = {
+      threat: 70,
+      expand: 60,
+      economic_priority: 50,
+      future_link: 45,
+      screen: 40,
+      explore: 35,
+    };
+    const eventWeights = {
+      incoming_threat: 15,
+      attack_burn: 14,
+      blockade_burn: 13,
+      control_shift: 12,
+      frontier_claim: 11,
+      reinforcement_burn: 10,
+      expansion_burn: 9,
+      arrival_burn: 8,
+      battle_report: 7,
+      supply_convoy: 6,
+      trade_signal: 5,
+      recon_station: 4,
+      recon_launch: 3,
+    };
+
+    return (markingWeights[markingValue] ?? 20) + (eventWeights[eventType] ?? 0);
+  }
+
+  function strategicCallbackForContext(row, eventType, relation) {
+    const name = row.systemName;
+    const priority = strategicCallbackPriority(row.value, eventType);
+
+    switch (row.value) {
+      case "expand":
+        if (!["expansion_burn", "frontier_claim", "arrival_burn", "control_shift", "reinforcement_burn"].includes(eventType)) {
+          return null;
+        }
+        return {
+          systemId: row.systemId,
+          systemName: name,
+          markingValue: row.value,
+          markingLabel: row.label,
+          severity: "success",
+          headline: `Marked expand target: ${name} is one of your declared growth lines.`,
+          summary: `You marked ${name} for expansion, so this signal should be read as movement on a declared objective rather than background frontier noise.`,
+          prompt: `Re-open ${name} on the map and decide whether to reinforce the push, probe deeper, or bank the gain before the window shifts.`,
+          priority,
+        };
+      case "explore":
+        if (!["recon_launch", "recon_station", "incoming_threat", "attack_burn", "arrival_burn"].includes(eventType)) {
+          return null;
+        }
+        return {
+          systemId: row.systemId,
+          systemName: name,
+          markingValue: row.value,
+          markingLabel: row.label,
+          severity: "info",
+          headline: `Marked explore target: ${name} is now generating new evidence.`,
+          summary: `You marked ${name} for exploration, so this report should update that working picture directly instead of sitting in the queue as generic intel.`,
+          prompt: `Check whether ${name} still needs a probe, a courier, or a pause before ships commit.`,
+          priority,
+        };
+      case "threat":
+        if (!["incoming_threat", "attack_burn", "blockade_burn", "reinforcement_burn", "arrival_burn", "battle_report", "control_shift", "expansion_burn"].includes(eventType)) {
+          return null;
+        }
+        return {
+          systemId: row.systemId,
+          systemName: name,
+          markingValue: row.value,
+          markingLabel: row.label,
+          severity: "danger",
+          headline:
+            relation === "origin"
+              ? `Marked threat source: pressure is originating from ${name}.`
+              : `Marked threat focus: activity around ${name} is hardening.`,
+          summary:
+            relation === "origin"
+              ? `You marked ${name} as a threat, and this signal is coming from exactly that frontier.`
+              : `You marked ${name} as a threat, and this report confirms the pressure there is not cooling on its own.`,
+          prompt: `Re-check reserves, probe cover, and nearby lanes before you treat ${name} as a solved problem.`,
+          priority,
+        };
+      case "screen":
+        if (!["blockade_burn", "incoming_threat", "attack_burn", "arrival_burn", "battle_report", "recon_launch", "recon_station"].includes(eventType)) {
+          return null;
+        }
+        return {
+          systemId: row.systemId,
+          systemName: name,
+          markingValue: row.value,
+          markingLabel: row.label,
+          severity: "warn",
+          headline: `Marked screen point: ${name} is a warning-time problem, not only a ship-count problem.`,
+          summary: `You marked ${name} for screening, so movement here should be judged by what it does to warning time and lane control first.`,
+          prompt: `Check whether ${name} still has enough probe or blockade coverage to keep the lane honest.`,
+          priority,
+        };
+      case "economic_priority":
+        if (!["trade_signal", "supply_convoy", "reinforcement_burn", "frontier_claim", "control_shift", "arrival_burn"].includes(eventType)) {
+          return null;
+        }
+        return {
+          systemId: row.systemId,
+          systemName: name,
+          markingValue: row.value,
+          markingLabel: row.label,
+          severity: "secondary",
+          headline: `Marked economic priority: ${name} is affecting the throughput line you flagged.`,
+          summary: `You marked ${name} as an economic priority, so this report changes more than local color; it changes the stores and shipping discipline that compound later.`,
+          prompt: `Inspect stockpiles and courier access at ${name} before the economic edge drifts somewhere else.`,
+          priority,
+        };
+      case "future_link":
+        if (!["trade_signal", "supply_convoy", "reinforcement_burn", "blockade_burn", "frontier_claim", "control_shift", "arrival_burn"].includes(eventType)) {
+          return null;
+        }
+        return {
+          systemId: row.systemId,
+          systemName: name,
+          markingValue: row.value,
+          markingLabel: row.label,
+          severity: "contrast",
+          headline: `Marked future link: ${name} is shifting as a possible outward hinge.`,
+          summary: `You marked ${name} as a future link, so this movement matters because it changes the outward connection you were planning around.`,
+          prompt: `Re-evaluate whether ${name} is still the right hinge for the next outward push.`,
+          priority,
+        };
+      default:
+        return null;
+    }
+  }
+
+  function strategicCallbacksForContexts(eventType, contexts) {
+    const callbacks = [];
+    const seen = new Set();
+
+    for (const context of contexts) {
+      const row = strategicMarkingRowForSystem(context?.systemId ?? null);
+      if (!row) {
+        continue;
+      }
+
+      const callback = strategicCallbackForContext(row, eventType, context?.relation ?? "location");
+      if (!callback) {
+        continue;
+      }
+
+      const key = `${callback.systemId}:${callback.markingValue}`;
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      callbacks.push(callback);
+    }
+
+    return callbacks.sort((left, right) => right.priority - left.priority || left.systemName.localeCompare(right.systemName));
+  }
+
+  function attachStrategicCallbacks(item, contexts) {
+    const callbacks = strategicCallbacksForContexts(item.eventType, contexts);
+    if (callbacks.length === 0) {
+      return item;
+    }
+
+    return {
+      ...item,
+      summary: `${item.summary} ${callbacks.map((callback) => callback.headline).join(" ")}`.replace(/\s+/gu, " ").trim(),
+      strategicCallbacks: callbacks,
+      strategicPriority: Math.max(...callbacks.map((callback) => callback.priority)),
+    };
+  }
 
   const originOptions = computed(() =>
     ownedSystems.value.map((system) => {
@@ -2097,6 +2372,7 @@ function effectiveMass(ships, cargoSalt, metals) {
     return {
       id: `dispatch:${report.id}`,
       date: report.availableDate,
+      eventType: "diplomatic_pigeon",
       kicker: "Diplomatic pigeon",
       title: `${translateFactionId(senderFactionId)} sent a ${voiceLabel.toLowerCase()} pigeon`,
       summary: `Delivered from ${originName} to ${destinationName}. ${message}`,
@@ -2109,6 +2385,7 @@ function effectiveMass(ships, cargoSalt, metals) {
       sourceLine: `${translateFactionId(senderFactionId)} · ${voiceLabel}`,
       senderFactionId,
       voiceLabel,
+      friendlySource: false,
     };
   }
 
@@ -2141,7 +2418,7 @@ function effectiveMass(ships, cargoSalt, metals) {
     }),
   );
 
-  const rawFeedItems = computed(() => {
+  const councilEvidenceItems = computed(() => {
     if (!currentSeat.value || !world.result) {
       return [];
     }
@@ -2182,7 +2459,213 @@ function effectiveMass(ships, cargoSalt, metals) {
       }
       return null;
     };
+    const snapshotAt = (date) => snapshotIndex.get(date) ?? null;
     const systemViewAt = (systemId, date) => snapshotIndex.get(date)?.systems?.[systemId] ?? null;
+    const stationedFleetsAt = (date, systemId, factionId = null) =>
+      Object.values(snapshotAt(date)?.fleets ?? {}).filter((fleet) =>
+        fleet.status === "stationed"
+        && fleet.currentSystemId === systemId
+        && (factionId ? fleet.factionId === factionId : true)
+        && fleet.ships > 0,
+      );
+    const totalShips = (fleets) => fleets.reduce((sum, fleet) => sum + (fleet.ships ?? 0), 0);
+    const reserveShipsAt = (date, systemId, factionId) => totalShips(stationedFleetsAt(date, systemId, factionId));
+    const makeCause = (key, label, detail, severity = "secondary") => ({
+      key,
+      label,
+      detail,
+      severity,
+    });
+    const summarizeCauses = (causes) =>
+      [...new Map((causes ?? []).map((cause) => [`${cause.key}:${cause.detail}`, cause])).values()]
+        .map((cause) => cause.detail)
+        .slice(0, 2)
+        .join(" ");
+    const attachCauses = (item, causes) => ({
+      ...item,
+      causes,
+      causeSummary: summarizeCauses(causes),
+    });
+    const probeCoverageAt = (date, factionId, systemId) => {
+      const active = [];
+      const pending = [];
+
+      for (const probe of Object.values(snapshotAt(date)?.probes ?? {})) {
+        if (probe.factionId !== factionId) {
+          continue;
+        }
+        const watchesSystem =
+          probe.currentSystemId === systemId
+          || probe.anchorSystemId === systemId
+          || probe.watchedSystemApproachId === systemId
+          || probe.watchedCorridorSystemId === systemId;
+        if (!watchesSystem) {
+          continue;
+        }
+        if (probe.status === "deployed") {
+          active.push(probe);
+        } else if (probe.status === "transit") {
+          pending.push(probe);
+        }
+      }
+
+      return { active, pending };
+    };
+    const probeCausesForSystem = (date, factionId, systemId) => {
+      const coverage = probeCoverageAt(date, factionId, systemId);
+      if (coverage.active.length > 0) {
+        return [
+          makeCause(
+            "probe_cover",
+            "Probe cover",
+            `A friendly probe was already covering ${translateSystemId(systemId)} before the contact landed.`,
+            "info",
+          ),
+        ];
+      }
+      if (coverage.pending.length > 0) {
+        const earliestArrival = coverage.pending
+          .map((probe) => probe.arrivalDate)
+          .filter(Boolean)
+          .sort()[0];
+        return [
+          makeCause(
+            "late_probe",
+            "Late probe",
+            earliestArrival
+              ? `A friendly probe was still inbound and would not settle over ${translateSystemId(systemId)} until ${earliestArrival}.`
+              : `A friendly probe was still inbound when the contact reached ${translateSystemId(systemId)}.`,
+            "warn",
+          ),
+        ];
+      }
+      return [];
+    };
+    const hostileBlockadeSystemsForFaction = (date, systemId, factionId) => {
+      const nearbySystemIds = new Set([systemId, ...(systemsMap.value.get(systemId)?.starlaneLinks ?? [])]);
+      return [...new Set(
+        Object.values(snapshotAt(date)?.fleets ?? {})
+          .filter((fleet) =>
+            fleet.status === "stationed"
+            && fleet.mission === "blockade"
+            && fleet.currentSystemId
+            && nearbySystemIds.has(fleet.currentSystemId)
+            && fleet.factionId !== factionId
+            && fleet.ships > 0,
+          )
+          .map((fleet) => fleet.currentSystemId),
+      )];
+    };
+    const blockadeCauseForSystem = (date, systemId, factionId) => {
+      const blockadeSystemIds = hostileBlockadeSystemsForFaction(date, systemId, factionId);
+      if (blockadeSystemIds.length === 0) {
+        return [];
+      }
+      return [
+        makeCause(
+          "route_blockade",
+          "Lane blockade",
+          `Hostile blockade pressure was already anchored at ${blockadeSystemIds.map((id) => translateSystemId(id)).join(", ")}.`,
+          "warn",
+        ),
+      ];
+    };
+    const blockadeCauseForFleet = (date, fleet) => {
+      if (!fleet?.travelPathSystemIds?.length) {
+        return [];
+      }
+      const blockadeSystemIds = [...new Set(
+        Object.values(snapshotAt(date)?.fleets ?? {})
+          .filter((candidate) =>
+            candidate.status === "stationed"
+            && candidate.mission === "blockade"
+            && candidate.currentSystemId
+            && fleet.travelPathSystemIds.includes(candidate.currentSystemId)
+            && candidate.factionId !== fleet.factionId
+            && candidate.ships > 0,
+          )
+          .map((candidate) => candidate.currentSystemId),
+      )];
+      if (blockadeSystemIds.length === 0) {
+        return [];
+      }
+      return [
+        makeCause(
+          "route_blockade",
+          "Lane blockade",
+          `The route already ran under hostile blockade pressure at ${blockadeSystemIds.map((id) => translateSystemId(id)).join(", ")}.`,
+          "warn",
+        ),
+      ];
+    };
+    const interceptionCauseForFleet = (fleet) => {
+      if (!fleet?.interceptedCombatDaysRemaining || !fleet?.interceptedByFactionId) {
+        return [];
+      }
+      const pinnedAt = Object.values(snapshotAt(fleet.arrivalDate ?? fleet.departureDate ?? currentWorldDate.value)?.fleets ?? {})
+        .find((candidate) =>
+          candidate.status === "stationed"
+          && candidate.mission === "blockade"
+          && candidate.currentSystemId
+          && fleet.travelPathSystemIds?.includes(candidate.currentSystemId)
+          && candidate.factionId === fleet.interceptedByFactionId,
+        )?.currentSystemId
+        ?? fleet.travelPathSystemIds?.find((systemId) => systemId !== fleet.originSystemId && systemId !== fleet.destinationSystemId)
+        ?? null;
+      return [
+        makeCause(
+          "intercepted_approach",
+          "Pinned on approach",
+          pinnedAt
+            ? `${translateFactionId(fleet.interceptedByFactionId)} pinned this approach at ${translateSystemId(pinnedAt)} before the landing.`
+            : `${translateFactionId(fleet.interceptedByFactionId)} pinned this approach before the landing.`,
+          "danger",
+        ),
+      ];
+    };
+    const reserveStrippedCauseForLaunch = (date, originSystemId, factionId, launchedShips) => {
+      const reserveShips = reserveShipsAt(date, originSystemId, factionId);
+      if (reserveShips > Math.max(2, Math.floor((launchedShips ?? 0) / 3))) {
+        return [];
+      }
+      return [
+        makeCause(
+          "reserve_stripped",
+          "Reserve stripped",
+          `${translateSystemId(originSystemId)} was left with only ${formatCountLabel(reserveShips, "ship")} in reserve after the launch.`,
+          "warn",
+        ),
+      ];
+    };
+    const localOvermatchCause = (systemId, attackerId, defenderId, attackerShips, defenderShips) => {
+      if (!Number.isFinite(attackerShips) || !Number.isFinite(defenderShips) || attackerShips === defenderShips) {
+        return [];
+      }
+      const strongerFactionId = attackerShips > defenderShips ? attackerId : defenderId;
+      const strongerShips = Math.max(attackerShips, defenderShips);
+      const weakerShips = Math.min(attackerShips, defenderShips);
+      return [
+        makeCause(
+          "local_overmatch",
+          "Local overmatch",
+          `${translateFactionId(strongerFactionId)} entered the exchange with roughly ${strongerShips} ships against ${weakerShips}.`,
+          "secondary",
+        ),
+      ];
+    };
+    const capturePressureCause = (systemId, systemView, factionId) => {
+      if (!systemView?.captureProgress || !factionId) {
+        return [];
+      }
+      return [
+        makeCause(
+          "capture_pressure",
+          "Capture pressure",
+          `${translateFactionId(factionId)} already had capture pressure building at ${translateSystemId(systemId)}.`,
+          "warn",
+        ),
+      ];
+    };
     const classifyLaunch = (factionId, destinationId, mission, date) => {
       const destinationView = systemViewAt(destinationId, date);
       const destinationOwnerId = destinationView?.ownerId ?? null;
@@ -2190,6 +2673,7 @@ function effectiveMass(ships, cargoSalt, metals) {
 
       if (mission === "trade") {
         return {
+          eventType: "trade_signal",
           kicker: "Trade signal",
           analysis: `${translateFactionId(factionId)} is moving cargo toward ${translateSystemId(destinationId)} for exchange or stockpile transfer.`,
         };
@@ -2197,6 +2681,7 @@ function effectiveMass(ships, cargoSalt, metals) {
 
       if (mission === "resupply") {
         return {
+          eventType: "supply_convoy",
           kicker: "Supply convoy",
           analysis: `${translateFactionId(factionId)} is strengthening endurance at ${translateSystemId(destinationId)} rather than looking for a decisive fight.`,
         };
@@ -2204,6 +2689,7 @@ function effectiveMass(ships, cargoSalt, metals) {
 
       if (mission === "blockade") {
         return {
+          eventType: "blockade_burn",
           kicker: "Blockade burn",
           analysis: `${translateFactionId(factionId)} is moving to hold ${translateSystemId(destinationId)} as a waypoint and threaten fast starlane traffic through it.`,
         };
@@ -2211,6 +2697,7 @@ function effectiveMass(ships, cargoSalt, metals) {
 
       if (destinationOwnerId === factionId) {
         return {
+          eventType: "reinforcement_burn",
           kicker: "Reinforcement burn",
           analysis: `${translateFactionId(factionId)} is reinforcing a friendly system and preparing for future contact.`,
         };
@@ -2218,6 +2705,7 @@ function effectiveMass(ships, cargoSalt, metals) {
 
       if (!destinationOwnerId) {
         return {
+          eventType: "expansion_burn",
           kicker: "Expansion burn",
           analysis: `${translateFactionId(factionId)} is likely trying to claim an open system before a rival can establish control.`,
         };
@@ -2225,12 +2713,14 @@ function effectiveMass(ships, cargoSalt, metals) {
 
       if (destinationOwnerId === currentSeat.value.faction.id) {
         return {
+          eventType: "incoming_threat",
           kicker: "Incoming threat",
           analysis: `${translateFactionId(factionId)} is attacking our position at ${translateSystemId(destinationId)} and likely intends to seize the system.`,
         };
       }
 
       return {
+        eventType: "attack_burn",
         kicker: "Attack burn",
         analysis: `${translateFactionId(factionId)} is attacking ${destinationOwnerName} at ${translateSystemId(destinationId)} and likely intends to take the system.`,
       };
@@ -2242,11 +2732,16 @@ function effectiveMass(ships, cargoSalt, metals) {
         return {
           id: `pending_probe:${probe.anchorSystemId}:${probe.submittedAt}`,
           date: probe.submittedAt,
+          eventType: "recon_launch",
           kicker: "Recon launched",
           title: `${translateFactionId(probe.factionId)} dispatched a probe toward ${translateSystemId(probe.anchorSystemId)}`,
           summary: `${translateSystemId(probe.originSystemId)} launched a probe toward ${translateSystemId(probe.anchorSystemId)}. Expected arrival in ${formatTravelSpan(etaDays ?? 0)}.`,
           analysis: "When it arrives, exact local defense, ships, and stores will become visible for that system.",
           tone: "info",
+          sourceLine: `${translateSystemId(probe.originSystemId)} · Recon Wing`,
+          sourceActorName: "Recon Wing",
+          sourceActorRole: getCouncilActorProfile("recon_command").role,
+          friendlySource: true,
         };
       });
     const items = [];
@@ -2277,6 +2772,7 @@ function effectiveMass(ships, cargoSalt, metals) {
       }
 
       let item = null;
+      let strategicContexts = [];
 
       const launchMatch = detail.match(/^(\w+) launched (\S+) from (\S+) to (\S+)$/u);
       if (launchMatch) {
@@ -2294,9 +2790,25 @@ function effectiveMass(ships, cargoSalt, metals) {
         const estimatedShips = fleet ? estimateTransitValue(fleet.ships) : "?";
         const exactShips = fleet?.ships ?? "?";
         const seatLaunch = fleet?.factionId === currentSeat.value.faction.id;
-        item = {
+        const launchCauses = [
+          ...reserveStrippedCauseForLaunch(parsed.date, launchMatch[3], launchMatch[1], fleet?.ships ?? 0),
+          ...blockadeCauseForFleet(parsed.date, fleet),
+          ...probeCausesForSystem(parsed.date, currentSeat.value.faction.id, launchMatch[4]),
+        ];
+        if (!systemViewAt(launchMatch[4], parsed.date)?.ownerId) {
+          launchCauses.push(
+            makeCause(
+              "open_claim_window",
+              "Open claim window",
+              `${translateSystemId(launchMatch[4])} was still unowned when this burn went out.`,
+              "info",
+            ),
+          );
+        }
+        item = attachCauses({
           id: `log:${parsed.date}:${detail}`,
           date: parsed.date,
+          eventType: launchClassification.eventType,
           kicker: launchClassification.kicker,
           title: `${translateFactionId(launchMatch[1])} launched ${seatLaunch ? exactShips : `an estimated ${estimatedShips}`} ships toward ${translateSystemId(launchMatch[4])}`,
           summary: `${translateFactionId(launchMatch[1])} departed ${translateSystemId(launchMatch[3])} for ${translateSystemId(launchMatch[4])}. ${seatLaunch ? "Expected arrival" : "Estimated arrival"} in ${formatTravelSpan(plan?.travelDays ?? 0)}.`,
@@ -2307,7 +2819,22 @@ function effectiveMass(ships, cargoSalt, metals) {
               : launchMatch[1] === currentSeat.value.faction.id
                 ? "info"
                 : "warn",
-        };
+          sourceLine: `${translateSystemId(launchMatch[3])}${fleet?.name ? ` · ${fleet.name}` : ""}`,
+          sourceActorName: seatLaunch ? (fleet?.name ?? null) : null,
+          sourceActorRole:
+            seatLaunch
+              ? (
+                  fleet?.mission === "trade" || fleet?.mission === "resupply"
+                    ? getCouncilActorProfile("convoy_command").role
+                    : getCouncilActorProfile("line_command").role
+                )
+              : null,
+          friendlySource: seatLaunch,
+        }, launchCauses);
+        strategicContexts = [
+          { systemId: launchMatch[3], relation: "origin" },
+          { systemId: launchMatch[4], relation: "destination" },
+        ];
       }
 
       const probeLaunchMatch = detail.match(/^(\w+) deployed probe (\S+) from (\S+) to (\S+)$/u);
@@ -2321,15 +2848,22 @@ function effectiveMass(ships, cargoSalt, metals) {
         item = {
           id: `log:${parsed.date}:${detail}`,
           date: parsed.date,
+          eventType: "recon_launch",
           kicker: "Recon launched",
           title: `${translateFactionId(probeLaunchMatch[1])} dispatched a probe toward ${translateSystemId(probeLaunchMatch[4])}`,
           summary: `${translateSystemId(probeLaunchMatch[3])} launched a probe toward ${translateSystemId(probeLaunchMatch[4])}. Expected arrival in ${formatTravelSpan(plan?.travelDays ?? 0)}.`,
           analysis: "When it arrives, exact local defense, ships, and stores will become visible for that system.",
           tone: "info",
+          sourceLine: `${translateSystemId(probeLaunchMatch[3])} · Recon Wing`,
+          sourceActorName: "Recon Wing",
+          sourceActorRole: getCouncilActorProfile("recon_command").role,
+          friendlySource: true,
         };
         if (probe?.status === "deployed") {
           item.analysis = `${translateFactionId(probeLaunchMatch[1])} already has exact local visibility there.`;
         }
+        item = attachCauses(item, probeCausesForSystem(parsed.date, currentSeat.value.faction.id, probeLaunchMatch[4]));
+        strategicContexts = [{ systemId: probeLaunchMatch[4], relation: "destination" }];
       }
 
       const probeArrivalMatch = detail.match(/^probe (\S+) deployed at (\S+)$/u);
@@ -2342,12 +2876,26 @@ function effectiveMass(ships, cargoSalt, metals) {
         item = {
           id: `log:${parsed.date}:${detail}`,
           date: parsed.date,
+          eventType: "recon_station",
           kicker: "Recon on station",
           title: `Probe established at ${translateSystemId(probeArrivalMatch[2])}`,
           summary: `A friendly probe is now reporting exact local conditions from ${translateSystemId(probeArrivalMatch[2])}.`,
           analysis: "The system card now reflects live local defense, ships, and stores from the probe.",
           tone: "success",
+          sourceLine: `${translateSystemId(probeArrivalMatch[2])} · Recon Wing`,
+          sourceActorName: "Recon Wing",
+          sourceActorRole: getCouncilActorProfile("recon_command").role,
+          friendlySource: true,
         };
+        item = attachCauses(item, [
+          makeCause(
+            "probe_cover",
+            "Probe cover",
+            `Exact local reporting is now live over ${translateSystemId(probeArrivalMatch[2])}.`,
+            "success",
+          ),
+        ]);
+        strategicContexts = [{ systemId: probeArrivalMatch[2], relation: "location" }];
       }
 
       const combatMatch = detail.match(/^combat at (\S+); attacker (\w+) lost (\d+), defender (\w+) lost (\d+)$/u);
@@ -2355,6 +2903,10 @@ function effectiveMass(ships, cargoSalt, metals) {
         const systemView = systemViewAt(combatMatch[1], parsed.date);
         const attackerLosses = Number(combatMatch[3]);
         const defenderLosses = Number(combatMatch[5]);
+        const attackerRemaining = reserveShipsAt(parsed.date, combatMatch[1], combatMatch[2]);
+        const defenderRemaining = reserveShipsAt(parsed.date, combatMatch[1], combatMatch[4]);
+        const attackerCommitted = attackerRemaining + attackerLosses;
+        const defenderCommitted = defenderRemaining + defenderLosses;
         let analysis = `${translateSystemId(combatMatch[1])} is still contested.`;
         if (systemView?.ownerId === combatMatch[4]) {
           analysis = `${translateFactionId(combatMatch[4])} likely held the field, but more pressure could still flip control.`;
@@ -2365,22 +2917,46 @@ function effectiveMass(ships, cargoSalt, metals) {
         } else if (defenderLosses > attackerLosses) {
           analysis = `${translateFactionId(combatMatch[2])} damaged the defense and may follow with a capture attempt.`;
         }
-        item = {
+        const attackerFleet =
+          stationedFleetsAt(parsed.date, combatMatch[1], combatMatch[2]).find((fleet) =>
+            fleet.destinationSystemId === combatMatch[1] || fleet.mission === "attack",
+          ) ?? null;
+        const battleCauses = [
+          ...interceptionCauseForFleet(attackerFleet),
+          ...blockadeCauseForSystem(parsed.date, combatMatch[1], combatMatch[4]),
+          ...probeCausesForSystem(parsed.date, currentSeat.value.faction.id, combatMatch[1]),
+          ...localOvermatchCause(combatMatch[1], combatMatch[2], combatMatch[4], attackerCommitted, defenderCommitted),
+          ...capturePressureCause(combatMatch[1], systemView, combatMatch[2]),
+        ];
+        item = attachCauses({
           id: `log:${parsed.date}:${detail}`,
           date: parsed.date,
+          eventType: "battle_report",
           kicker: "Battle report",
           title: `Fighting at ${translateSystemId(combatMatch[1])}`,
           summary: `${translateFactionId(combatMatch[2])} lost ${combatMatch[3]} ships. ${translateFactionId(combatMatch[4])} lost ${combatMatch[5]} ships.`,
           analysis,
           tone: relevantSystemIds.has(combatMatch[1]) ? "danger" : "warn",
-        };
+          sourceLine: `${translateSystemId(combatMatch[1])} · Contact report`,
+          friendlySource:
+            combatMatch[2] === currentSeat.value.faction.id
+            || combatMatch[4] === currentSeat.value.faction.id,
+        }, battleCauses);
+        strategicContexts = [{ systemId: combatMatch[1], relation: "location" }];
       }
 
       const captureMatch = detail.match(/^(\w+) captured (\S+)$/u);
       if (!item && captureMatch) {
-        item = {
+        const captureView = systemViewAt(captureMatch[2], parsed.date);
+        const captureCauses = [
+          ...blockadeCauseForSystem(parsed.date, captureMatch[2], captureMatch[1]),
+          ...probeCausesForSystem(parsed.date, currentSeat.value.faction.id, captureMatch[2]),
+          ...capturePressureCause(captureMatch[2], captureView, captureMatch[1]),
+        ];
+        item = attachCauses({
           id: `log:${parsed.date}:${detail}`,
           date: parsed.date,
+          eventType: "control_shift",
           kicker: "Control shift",
           title: `${translateSystemId(captureMatch[2])} changed hands`,
           summary: `${translateFactionId(captureMatch[1])} completed the takeover of ${translateSystemId(captureMatch[2])}.`,
@@ -2389,20 +2965,36 @@ function effectiveMass(ships, cargoSalt, metals) {
               ? `${translateSystemId(captureMatch[2])} now feeds our economy, but the new control window is still vulnerable to immediate counterattack.`
               : `${translateSystemId(captureMatch[2])} now pays salt and metals to ${translateFactionId(captureMatch[1])}. A fast counterattack can still matter if the grip is new.`,
           tone: captureMatch[1] === currentSeat.value.faction.id ? "success" : "danger",
-        };
+          sourceLine: `${translateSystemId(captureMatch[2])} · Control report`,
+          friendlySource: captureMatch[1] === currentSeat.value.faction.id,
+        }, captureCauses);
+        strategicContexts = [{ systemId: captureMatch[2], relation: "location" }];
       }
 
       const claimMatch = detail.match(/^(\w+) claimed open system (\S+)$/u);
       if (!item && claimMatch) {
-        item = {
+        const claimCauses = [
+          makeCause(
+            "open_claim_window",
+            "Open claim window",
+            `${translateSystemId(claimMatch[2])} had no owner, so presence converted directly into control and income.`,
+            "info",
+          ),
+          ...reserveStrippedCauseForLaunch(parsed.date, claimMatch[2], claimMatch[1], reserveShipsAt(parsed.date, claimMatch[2], claimMatch[1])),
+        ];
+        item = attachCauses({
           id: `log:${parsed.date}:${detail}`,
           date: parsed.date,
+          eventType: "frontier_claim",
           kicker: "Frontier claim",
           title: `${translateFactionId(claimMatch[1])} secured ${translateSystemId(claimMatch[2])}`,
           summary: `${translateSystemId(claimMatch[2])} was open and has now entered ${translateFactionId(claimMatch[1])}'s network.`,
           analysis: "Unchecked frontier growth compounds quickly because the new system starts generating salt immediately.",
           tone: claimMatch[1] === currentSeat.value.faction.id ? "success" : "warn",
-        };
+          sourceLine: `${translateSystemId(claimMatch[2])} · Frontier report`,
+          friendlySource: claimMatch[1] === currentSeat.value.faction.id,
+        }, claimCauses);
+        strategicContexts = [{ systemId: claimMatch[2], relation: "location" }];
       }
 
       const arrivalMatch = detail.match(/^fleet (\S+) arrived at (\S+)$/u);
@@ -2422,9 +3014,25 @@ function effectiveMass(ships, cargoSalt, metals) {
           fleet?.factionId &&
           destinationView?.ownerId &&
           fleet.factionId !== destinationView.ownerId;
-        item = {
+        const arrivalCauses = [
+          ...interceptionCauseForFleet(fleet),
+          ...blockadeCauseForFleet(parsed.date, fleet),
+          ...probeCausesForSystem(parsed.date, currentSeat.value.faction.id, arrivalMatch[2]),
+        ];
+        if (fleet?.destinationSystemId && !destinationView?.ownerId) {
+          arrivalCauses.push(
+            makeCause(
+              "open_claim_window",
+              "Open claim window",
+              `${translateSystemId(arrivalMatch[2])} was still unowned when the force arrived.`,
+              "info",
+            ),
+          );
+        }
+        item = attachCauses({
           id: `log:${parsed.date}:${detail}`,
           date: parsed.date,
+          eventType: "arrival_burn",
           kicker: "Arrival burn",
           title: `${translateSystemId(arrivalMatch[2])} received ${fleet?.ships ?? "?"} ships`,
           summary: `${translateFactionId(fleet?.factionId ?? "unknown")} reached ${translateSystemId(arrivalMatch[2])}${fleet?.mission ? ` ${formatMissionNarrative(fleet.mission)}` : ""}.`,
@@ -2432,12 +3040,26 @@ function effectiveMass(ships, cargoSalt, metals) {
             ? "This arrival threatens local control immediately if the defender cannot match the landing force."
             : "This movement changes local force balance even if it does not produce combat right away.",
           tone: relevantSystemIds.has(arrivalMatch[2]) || isHostileArrival ? "warn" : "info",
-        };
+          sourceLine: `${translateSystemId(arrivalMatch[2])}${fleet?.name ? ` · ${fleet.name}` : ""}`,
+          sourceActorName: fleet?.factionId === currentSeat.value.faction.id ? (fleet?.name ?? null) : null,
+          sourceActorRole:
+            fleet?.factionId === currentSeat.value.faction.id
+              ? (
+                  fleet?.mission === "trade" || fleet?.mission === "resupply"
+                    ? getCouncilActorProfile("convoy_command").role
+                    : getCouncilActorProfile("line_command").role
+                )
+              : null,
+          friendlySource: fleet?.factionId === currentSeat.value.faction.id,
+        }, arrivalCauses);
+        strategicContexts = [{ systemId: arrivalMatch[2], relation: "location" }];
       }
 
       if (!item) {
         continue;
       }
+
+      item = attachStrategicCallbacks(item, strategicContexts);
 
       items.push(item);
       if (items.length >= 60) {
@@ -2452,21 +3074,29 @@ function effectiveMass(ships, cargoSalt, metals) {
     ]).slice(0, 60);
   });
 
+  const councilState = computed(() => composeCouncilStateFromEvidence(councilEvidenceItems.value));
+  const councilActors = computed(() => councilState.value.actors);
+  const councilBeliefs = computed(() => councilState.value.beliefs);
+
   const feedItems = computed(() =>
-    rawFeedItems.value
-      .map((item) => withAdvisorContext(item))
+    councilState.value.notes
       .filter((item) => !processedReportIds.value.has(item.id))
+      .map((item) => withCouncilDisplayContext(item))
       .slice(0, 12),
   );
 
+  const feedGroups = computed(() => groupCouncilFeedItems(feedItems.value));
+
+  const sourceLedgerItems = computed(() => councilState.value.sourceLedger.slice(0, 10));
+
   const archivedReportItems = computed(() =>
     sortReportsByDate(Object.values(ui.planner.archivedReportsById ?? {}))
-      .map((item) => withAdvisorContext(item)),
+      .map((item) => withCouncilDisplayContext(item)),
   );
 
   const notebookTodoItems = computed(() =>
     sortReportsByDate(Object.values(ui.planner.followUpReportsById ?? {}))
-      .map((item) => withAdvisorContext(item)),
+      .map((item) => withCouncilDisplayContext(item)),
   );
 
   const orderBrief = computed(() => {
@@ -2909,10 +3539,14 @@ function effectiveMass(ships, cargoSalt, metals) {
     if (!simulationResponse.ok) {
       throw new Error(`Unable to simulate scenario ${id}`);
     }
+    const simulationPayload = await simulationResponse.json();
 
     testHarness.activeScenarioId = id;
     world.scenario = normalizeScenario(loadedScenario);
-    world.result = await simulationResponse.json();
+    world.result = simulationPayload;
+    runtime.capabilities = cloneRuntimeCapabilities(
+      simulationPayload.runtimeCapabilities ?? runtime.capabilities,
+    );
     ui.pendingProbeOrders = {};
     ui.seatFactionId = chooseDefaultSeatId();
     ui.selectedSystemId =
@@ -2927,6 +3561,10 @@ function effectiveMass(ships, cargoSalt, metals) {
       if (!health.ok) {
         throw new Error("health check failed");
       }
+      const healthPayload = await health.json();
+      runtime.capabilities = cloneRuntimeCapabilities(
+        healthPayload.runtimeCapabilities ?? runtime.capabilities,
+      );
 
       const response = await fetchImpl("/api/scenarios");
       if (!response.ok) {
@@ -2958,8 +3596,12 @@ function effectiveMass(ships, cargoSalt, metals) {
       throw new Error(failureBody || `Unable to simulate scenario ${nextScenario.name}`);
     }
 
+    const simulationPayload = await simulationResponse.json();
     world.scenario = nextScenario;
-    world.result = await simulationResponse.json();
+    world.result = simulationPayload;
+    runtime.capabilities = cloneRuntimeCapabilities(
+      simulationPayload.runtimeCapabilities ?? runtime.capabilities,
+    );
   }
 
   function currentCommandDate() {
@@ -3976,7 +4618,6 @@ function effectiveMass(ships, cargoSalt, metals) {
     };
 
     if (lessonSource) {
-      const lessonAdvisor = advisorProfileForReport(lessonSource);
       lesson = {
         key: "lesson",
         label: "Lesson",
@@ -3984,9 +4625,9 @@ function effectiveMass(ships, cargoSalt, metals) {
         title: `Lesson from ${lessonSource.kicker.toLowerCase()}`,
         summary: lessonSource.analysis,
         source: lessonSource.title,
-        advisorId: lessonAdvisor.advisorId,
-        advisorName: lessonAdvisor.advisorName,
-        advisorRole: lessonAdvisor.role,
+        advisorId: lessonSource.advisorId ?? advisorProfile("envoy").advisorId,
+        advisorName: lessonSource.advisorName ?? advisorProfile("envoy").advisorName,
+        advisorRole: lessonSource.advisorRole ?? advisorProfile("envoy").role,
       };
     } else if (advisorBriefs.value.length > 0) {
       const advisor = advisorBriefs.value[0];
@@ -4182,6 +4823,7 @@ function effectiveMass(ships, cargoSalt, metals) {
     currentSeatHomeSystem,
     currentWorldDate,
     latestSnapshot,
+    runtimeCapabilities,
     selectedSystem,
     selectedSystemFriendly,
     selectedSystemOverview,
@@ -4191,6 +4833,7 @@ function effectiveMass(ships, cargoSalt, metals) {
     selectedSystemMarking,
     strategicMarkingRows,
     strategyBoardSummary,
+    advisorDeskPolicy: ADVISOR_DESK_POLICY,
     advisorBriefs,
     dailyBrief,
     probeCommandRows,
@@ -4208,7 +4851,11 @@ function effectiveMass(ships, cargoSalt, metals) {
     mapCanvas,
     fleetMarkers,
     probeMarkers,
+    councilActors,
+    councilBeliefs,
     feedItems,
+    feedGroups,
+    sourceLedgerItems,
     archivedReportItems,
     notebookTodoItems,
     diplomaticInboxItems,

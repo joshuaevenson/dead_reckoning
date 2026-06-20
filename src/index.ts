@@ -1,5 +1,6 @@
 import type { ScenarioDefinition } from "./types.js";
 import { scenarioCatalog } from "./generated/scenario-catalog.js";
+import { runtimeCapabilities } from "./runtime-capabilities.js";
 import { simulateScenario } from "./simulator.js";
 
 export default {
@@ -7,7 +8,11 @@ export default {
     const url = new URL(request.url);
 
     if (request.method === "GET" && (url.pathname === "/health" || url.pathname === "/api/health")) {
-      return Response.json({ ok: true, service: "dead-reckoning-worker" });
+      return Response.json({
+        ok: true,
+        service: "dead-reckoning-worker",
+        runtimeCapabilities,
+      });
     }
 
     if (request.method === "GET" && url.pathname === "/api/scenarios") {
@@ -40,7 +45,10 @@ export default {
     ) {
       const scenario = (await request.json()) as ScenarioDefinition;
       const result = simulateScenario(scenario);
-      return Response.json(result);
+      return Response.json({
+        ...result,
+        runtimeCapabilities,
+      });
     }
 
     return new Response("Not found", { status: 404 });

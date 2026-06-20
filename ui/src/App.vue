@@ -21,12 +21,14 @@ const {
   ui,
   currentSeat,
   currentSeatHomeSystem,
+  runtimeCapabilities,
   selectedSystem,
   selectedSystemFriendly,
   selectedSystemOverview,
   summaryCards,
   strategicMarkingRows,
   strategyBoardSummary,
+  advisorDeskPolicy,
   advisorBriefs,
   dailyBrief,
   productionPlannerRows,
@@ -42,6 +44,7 @@ const {
   probeMarkers,
   starlaneSegments,
   feedItems,
+  feedGroups,
   archivedReportItems,
   notebookTodoItems,
   diplomaticInboxItems,
@@ -191,6 +194,7 @@ onMounted(async () => {
         <Tag v-if="currentSeat" severity="contrast" rounded>{{ currentSeat.faction.name }}</Tag>
         <Tag v-if="currentSeatHomeSystem" severity="secondary" rounded>Home: {{ currentSeatHomeSystem.name }}</Tag>
         <Tag v-if="world.result" severity="info" rounded>{{ world.result.endDate }}</Tag>
+        <Tag v-if="runtimeCapabilities" severity="secondary" rounded>{{ runtimeCapabilities.ai.label }}</Tag>
         <Tag :severity="api.tone" rounded>{{ api.status }}</Tag>
       </div>
     </header>
@@ -891,78 +895,147 @@ onMounted(async () => {
             </div>
 
             <div class="reports-main-stack">
-              <section v-if="dailyBrief" class="reports-brief-section">
-                <div class="planning-header reports-brief-header">
-                  <div>
-                    <div class="panel-kicker">Morning Brief</div>
-                    <div class="panel-title">Council Priorities</div>
-                  </div>
-                  <Tag severity="contrast" rounded>{{ dailyBrief.date }}</Tag>
-                </div>
-                <div class="reports-brief-copy">
-                  These are the advisors' framed priorities for the day, separate from the raw signal interpretations below.
-                </div>
-
-                <div class="reports-brief-list">
-                  <article
-                    v-for="item in dailyBrief.items"
-                    :key="item.key"
-                    :class="[
-                      'feed-card',
-                      'reports-brief-card',
-                      `feed-tone-${item.severity === 'contrast' ? 'info' : item.severity}`,
-                    ]"
-                  >
-                    <div class="feed-card-top">
-                      <div class="feed-kicker">{{ item.label }}</div>
-                      <Tag :severity="item.severity" rounded>{{ item.advisorName }}</Tag>
+              <div v-if="runtimeCapabilities || dailyBrief" class="reports-summary-stack">
+                <section v-if="runtimeCapabilities" class="reports-capability-section">
+                  <div class="planning-header reports-capability-header">
+                    <div>
+                      <div class="panel-kicker">Runtime</div>
+                      <div class="panel-title">{{ runtimeCapabilities.ai.label }} Symbolic Baseline</div>
                     </div>
-                    <div class="feed-title">{{ item.title }}</div>
-                    <div class="feed-byline">{{ item.advisorRole }} · {{ item.source }}</div>
-                    <p class="feed-copy">{{ item.summary }}</p>
-                  </article>
-                </div>
-              </section>
+                    <Tag severity="secondary" rounded>{{ runtimeCapabilities.surfaces.length }} covered</Tag>
+                  </div>
+                  <div class="reports-brief-copy">
+                    {{ runtimeCapabilities.ai.summary }}
+                  </div>
+                  <div class="reports-capability-body">
+                    <div class="reports-capability-summary">
+                      {{ runtimeCapabilities.summary }}
+                    </div>
+                    <div class="reports-capability-grid">
+                      <article
+                        v-for="surface in runtimeCapabilities.surfaces"
+                        :key="surface.id"
+                        class="feed-card reports-capability-card feed-tone-info"
+                      >
+                        <div class="feed-card-top">
+                          <div class="feed-kicker">{{ surface.label }}</div>
+                          <Tag :severity="surface.baseline === 'scenario_seeded' ? 'contrast' : 'info'" rounded>
+                            {{ surface.baseline === "scenario_seeded" ? "Scenario seeded" : "Symbolic" }}
+                          </Tag>
+                        </div>
+                        <p class="feed-copy">{{ surface.summary }}</p>
+                      </article>
+                    </div>
+                  </div>
+                </section>
+
+                <section v-if="dailyBrief" class="reports-brief-section">
+                  <div class="planning-header reports-brief-header">
+                    <div>
+                      <div class="panel-kicker">Morning Brief</div>
+                      <div class="panel-title">Council Priorities</div>
+                    </div>
+                    <Tag severity="contrast" rounded>{{ dailyBrief.date }}</Tag>
+                  </div>
+                  <div class="reports-brief-copy">
+                    These are the council's pushed priorities for the day. The inbox below is where individual advisors and commanders make their case.
+                  </div>
+
+                  <div class="reports-brief-list">
+                    <article
+                      v-for="item in dailyBrief.items"
+                      :key="item.key"
+                      :class="[
+                        'feed-card',
+                        'reports-brief-card',
+                        `feed-tone-${item.severity === 'contrast' ? 'info' : item.severity}`,
+                      ]"
+                    >
+                      <div class="feed-card-top">
+                        <div class="feed-kicker">{{ item.label }}</div>
+                        <Tag :severity="item.severity" rounded>{{ item.advisorName }}</Tag>
+                      </div>
+                      <div class="feed-title">{{ item.title }}</div>
+                      <div class="feed-byline">{{ item.advisorRole }} · {{ item.source }}</div>
+                      <p class="feed-copy">{{ item.summary }}</p>
+                    </article>
+                  </div>
+                </section>
+              </div>
 
               <section class="reports-queue-section">
                 <div class="planning-header reports-queue-header">
                   <div>
-                    <div class="panel-kicker">Signal Queue</div>
-                    <div class="panel-title">Advisor Interpretations</div>
+                    <div class="panel-kicker">Council Inbox</div>
+                    <div class="panel-title">Advisor And Commander Notes</div>
                   </div>
                   <Tag severity="info" rounded>{{ feedItems.length }} open</Tag>
                 </div>
 
-                <div v-if="feedItems.length > 0" class="feed-scroll reports-scroll">
+                <div v-if="feedGroups.length > 0" class="feed-scroll reports-scroll">
                   <article
-                    v-for="item in feedItems"
-                    :key="item.id"
-                    :class="['feed-card', `feed-tone-${item.tone}`]"
+                    v-for="group in feedGroups"
+                    :key="group.id"
+                    :class="['feed-card', 'reports-feed-group', `feed-tone-${group.tone}`]"
                   >
                     <div class="feed-card-top">
-                      <div class="feed-kicker">{{ item.kicker }}</div>
-                      <Tag :severity="item.tone" rounded>{{ item.date }}</Tag>
+                      <div class="feed-kicker">{{ group.kicker }}</div>
+                      <div class="reports-feed-badges">
+                        <Tag v-if="group.hasAdvisorDisagreement" severity="warn" rounded>Split reading</Tag>
+                        <Tag :severity="group.tone" rounded>{{ group.date }}</Tag>
+                      </div>
                     </div>
-                    <div class="feed-title">{{ item.title }}</div>
+                    <div class="feed-title">{{ group.title }}</div>
                     <div class="feed-byline">
-                      {{ item.advisorName }} · {{ item.advisorRole }}<span v-if="item.sourceLine"> · {{ item.sourceLine }}</span>
+                      <span v-if="group.hasAdvisorDisagreement">Shared signal</span><span v-if="group.hasAdvisorDisagreement && group.sourceLine"> · </span><span v-if="group.sourceLine">{{ group.sourceLine }}</span>
                     </div>
-                    <p class="feed-copy">{{ item.summary }}</p>
-                    <p class="feed-impact"><span>Consequence:</span> {{ item.analysis }}</p>
-                    <div class="feed-actions">
-                      <Button
-                        label="Follow Up"
-                        icon="pi pi-bookmark"
-                        severity="secondary"
-                        outlined
-                        @click="markReportForFollowUp(item)"
-                      />
-                      <Button
-                        label="Archive"
-                        icon="pi pi-check"
-                        severity="contrast"
-                        @click="archiveReportItem(item)"
-                      />
+                    <p class="feed-copy">{{ group.summary }}</p>
+
+                    <div :class="['reports-note-grid', group.hasAdvisorDisagreement ? 'reports-note-grid-split' : '']">
+                      <section
+                        v-for="item in group.notes"
+                        :key="item.id"
+                        class="reports-note-card"
+                      >
+                        <div class="feed-card-top reports-note-top">
+                          <div>
+                            <div class="feed-kicker">{{ item.actorLabel }}</div>
+                            <div class="reports-note-title">{{ item.advisorName }}</div>
+                          </div>
+                          <div class="reports-note-tags">
+                            <Tag severity="secondary" rounded>{{ item.stanceLabel }}</Tag>
+                            <Tag :severity="item.confidenceSeverity" rounded>{{ item.confidenceLabel }}</Tag>
+                          </div>
+                        </div>
+                        <div class="feed-byline">{{ item.advisorRole }}</div>
+                        <p class="feed-impact"><span>Consequence:</span> {{ item.analysis }}</p>
+                        <div v-if="item.causes?.length" class="reports-note-causes">
+                          <Tag
+                            v-for="cause in item.causes"
+                            :key="`${item.id}:${cause.key}:${cause.label}`"
+                            :severity="cause.severity"
+                            rounded
+                          >
+                            {{ cause.label }}
+                          </Tag>
+                        </div>
+                        <p v-if="item.reasoning" class="reports-note-reasoning">{{ item.reasoning }}</p>
+                        <div class="feed-actions">
+                          <Button
+                            label="Follow Up"
+                            icon="pi pi-bookmark"
+                            severity="secondary"
+                            outlined
+                            @click="markReportForFollowUp(item)"
+                          />
+                          <Button
+                            label="Archive"
+                            icon="pi pi-check"
+                            severity="contrast"
+                            @click="archiveReportItem(item)"
+                          />
+                        </div>
+                      </section>
                     </div>
                   </article>
                 </div>
@@ -974,7 +1047,7 @@ onMounted(async () => {
           </section>
 
           <aside class="reports-sidebar">
-            <section class="reports-side-panel report-archive-panel">
+            <section v-if="advisorDeskPolicy.showDiplomaticInbox" class="reports-side-panel report-archive-panel">
               <div class="planning-header">
                 <div>
                   <div class="panel-kicker">Diplomatic Inbox</div>
@@ -1007,6 +1080,18 @@ onMounted(async () => {
             <section class="reports-side-panel report-archive-panel">
               <div class="planning-header">
                 <div>
+                  <div class="panel-kicker">Desk Boundary</div>
+                  <div class="panel-title">Advisor Surface Only</div>
+                </div>
+                <Tag severity="contrast" rounded>Map holds truth</Tag>
+              </div>
+              <p class="feed-copy">{{ advisorDeskPolicy.summary }}</p>
+              <p class="feed-impact"><span>Go to map:</span> {{ advisorDeskPolicy.mapGuidance }}</p>
+            </section>
+
+            <section v-if="advisorDeskPolicy.showArchive" class="reports-side-panel report-archive-panel">
+              <div class="planning-header">
+                <div>
                   <div class="panel-kicker">Archive</div>
                   <div class="panel-title">Processed Reports</div>
                 </div>
@@ -1025,7 +1110,7 @@ onMounted(async () => {
                   </div>
                   <div class="feed-title">{{ item.title }}</div>
                   <div class="feed-byline">
-                    {{ item.advisorName ?? "Advisor queue" }} · {{ item.advisorRole ?? item.kicker }}<span v-if="item.sourceLine"> · {{ item.sourceLine }}</span>
+                    {{ item.actorLabel ?? "Council" }} · {{ item.advisorName ?? "Advisor queue" }} · {{ item.advisorRole ?? item.kicker }}<span v-if="item.sourceLine"> · {{ item.sourceLine }}</span>
                   </div>
                   <p class="feed-copy">{{ item.summary }}</p>
                   <div class="feed-actions feed-actions-compact">
@@ -1048,55 +1133,6 @@ onMounted(async () => {
               </div>
               <div v-else class="map-empty-state reports-empty-state">
                 Archive items here to keep the live queue short without losing the paper trail.
-              </div>
-            </section>
-
-            <section v-if="reconSummary.total > 0" class="recon-strip reports-side-panel">
-              <div class="recon-header">
-                <div>
-                  <div class="panel-kicker">Recon Net</div>
-                  <div class="recon-title">{{ reconSummary.onStation }} on station · {{ reconSummary.inTransit }} in transit</div>
-                </div>
-                <Tag severity="contrast" rounded>{{ reconSummary.total }} probes</Tag>
-              </div>
-              <div class="recon-list recon-list-scroll">
-                <div
-                  v-for="item in reconSummary.items"
-                  :key="item.probeId"
-                  :class="['recon-item', `recon-${item.status}`]"
-                >
-                  <div class="recon-item-top">
-                    <strong>{{ item.label }}</strong>
-                    <span>{{ item.statusLabel }}</span>
-                  </div>
-                  <div class="recon-item-detail">{{ item.detail }}</div>
-                </div>
-              </div>
-            </section>
-
-            <section class="system-summary-panel reports-side-panel">
-              <div class="panel-kicker">Focused System</div>
-              <div v-if="selectedSystemOverview" class="selected-system-stack">
-                <div class="panel-title">{{ selectedSystemOverview.title }}</div>
-                <div v-if="selectedSystemOverview.homeLabel" class="system-subline system-home-line">{{ selectedSystemOverview.homeLabel }}</div>
-                <div class="system-subline">{{ selectedSystemOverview.owner }}</div>
-                <div class="system-subline">{{ selectedSystemOverview.starText }} · {{ selectedSystemOverview.metalText }}</div>
-                <div class="system-subline">
-                  {{ selectedSystemOverview.laneText }}<span v-if="selectedSystemOverview.blockadeText"> · {{ selectedSystemOverview.blockadeText }}</span>
-                </div>
-                <div class="system-facts reports-facts">
-                  <div
-                    v-for="fact in selectedSystemOverview.facts"
-                    :key="`${selectedSystemOverview.title}-report-${fact.label}`"
-                    class="system-fact"
-                  >
-                    <span class="system-fact-label">{{ fact.label }}</span>
-                    <span class="system-fact-value">{{ fact.value }}</span>
-                  </div>
-                </div>
-              </div>
-              <div v-else class="map-empty-state reports-empty-state">
-                Select a star from the map workspace to pin its details here.
               </div>
             </section>
           </aside>
@@ -1206,7 +1242,7 @@ onMounted(async () => {
                       <Tag :severity="item.tone" rounded>{{ item.date }}</Tag>
                     </div>
                     <div class="feed-title">{{ item.title }}</div>
-                    <div class="feed-byline">{{ item.advisorName ?? "Advisor queue" }} · {{ item.advisorRole ?? item.kicker }}</div>
+                    <div class="feed-byline">{{ item.actorLabel ?? "Council" }} · {{ item.advisorName ?? "Advisor queue" }} · {{ item.advisorRole ?? item.kicker }}</div>
                     <p class="feed-copy">{{ item.summary }}</p>
                     <p class="feed-impact"><span>Consequence:</span> {{ item.analysis }}</p>
                     <div class="feed-actions feed-actions-compact">
