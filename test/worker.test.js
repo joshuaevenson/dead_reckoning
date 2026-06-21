@@ -13,6 +13,35 @@ test("worker health exposes the explicit AI-off runtime contract", async () => {
   const body = await response.json();
   assert.equal(body.runtimeCapabilities.ai.mode, "off");
   assert.equal(body.runtimeCapabilities.surfaces.some((surface) => surface.id === "diplomacy"), true);
+  assert.deepEqual(
+    body.runtimeCapabilities.surfaces.find((surface) => surface.id === "advisor_desk")?.overlayPipeline?.stages,
+    ["derive", "compose", "enrich", "validate"],
+  );
+});
+
+test("worker health exposes simulated mode through the same runtime contract", async () => {
+  const response = await worker.fetch(
+    new Request("https://example.com/api/health?ai=simulated"),
+  );
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.runtimeCapabilities.ai.requestedMode, "simulated");
+  assert.equal(body.runtimeCapabilities.ai.mode, "simulated");
+  assert.equal(body.runtimeCapabilities.ai.provider.status, "simulated");
+});
+
+test("worker health falls back to symbolic mode when enabled AI is requested without a provider", async () => {
+  const response = await worker.fetch(
+    new Request("https://example.com/api/health?ai=enabled"),
+  );
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.runtimeCapabilities.ai.requestedMode, "enabled");
+  assert.equal(body.runtimeCapabilities.ai.mode, "off");
+  assert.equal(body.runtimeCapabilities.ai.provider.status, "unconfigured");
+  assert.equal(body.runtimeCapabilities.ai.fallback?.mode, "off");
 });
 
 test("worker lists bundled scenarios", async () => {

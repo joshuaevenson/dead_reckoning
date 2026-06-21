@@ -1,11 +1,12 @@
 import type { ScenarioDefinition } from "./types.js";
 import { scenarioCatalog } from "./generated/scenario-catalog.js";
-import { runtimeCapabilities } from "./runtime-capabilities.js";
+import { runtimeCapabilitiesForRequest } from "./runtime-capabilities.js";
 import { simulateScenario } from "./simulator.js";
 
 export default {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
+    const runtimeCapabilities = runtimeCapabilitiesForRequest(request);
 
     if (request.method === "GET" && (url.pathname === "/health" || url.pathname === "/api/health")) {
       return Response.json({

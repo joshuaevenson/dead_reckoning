@@ -2,7 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { nextTick } from "vue";
 import worker from "../dist/index.js";
-import { composeCouncilStateFromEvidence } from "../src/council.js";
+import {
+  composeCouncilStateFromEvidence,
+  councilStateOverlayPipeline,
+  resolveCouncilStateFromEvidence,
+} from "../src/council.js";
+import {
+  diplomaticPigeonOverlayPipeline,
+  resolveDiplomaticPigeonSchema,
+} from "../src/symbolic-schemas.js";
 import { createCommandState } from "../ui/src/useCommandState.js";
 
 function createWorkerFetch() {
@@ -126,6 +134,212 @@ test("council composition derives competing advisor takes from the same hostile 
   assert.equal(advisorNotes.every((note) => note.confidenceLabel.length > 0 && note.reasoning.length > 0), true);
 });
 
+test("council overlay pipeline accepts validated enrichment without forking symbolic composition", async () => {
+  const evidenceItems = [
+    {
+      id: "evidence:probe-launch",
+      date: "2240-01-03",
+      eventType: "recon_launch",
+      kicker: "Recon launched",
+      title: "Aster Crown dispatched a probe toward Tau Ceti",
+      summary: "Sol launched a probe toward Tau Ceti. Expected arrival in 2 years.",
+      analysis: "When it arrives, exact local defense, ships, and stores will become visible for that system.",
+      tone: "info",
+      sourceLine: "Sol · Recon Wing",
+      friendlySource: true,
+      sourceActorName: "Recon Wing",
+      sourceActorRole: "Recon Wing",
+    },
+  ];
+
+  const baseline = composeCouncilStateFromEvidence(evidenceItems);
+  const result = await councilStateOverlayPipeline.run(evidenceItems, {
+    aiMode: "simulated",
+    enrich: ({ composed }) => ({
+      ...composed,
+      notes: composed.notes.map((note) => ({
+        ...note,
+        analysis: `Enriched: ${note.analysis}`,
+      })),
+    }),
+  });
+
+  assert.equal(result.meta.stageState.enrich, "completed");
+  assert.equal(result.meta.stageState.validate, "completed");
+  assert.equal(result.output.notes.length, baseline.notes.length);
+  assert.equal(result.output.notes.every((note) => note.analysis.startsWith("Enriched: ")), true);
+});
+
+test("council state resolver keeps the symbolic output shape while honoring simulated mode", async () => {
+  const evidenceItems = [
+    {
+      id: "evidence:probe-launch",
+      date: "2240-01-03",
+      eventType: "recon_launch",
+      kicker: "Recon launched",
+      title: "Aster Crown dispatched a probe toward Tau Ceti",
+      summary: "Sol launched a probe toward Tau Ceti. Expected arrival in 2 years.",
+      analysis: "When it arrives, exact local defense, ships, and stores will become visible for that system.",
+      tone: "info",
+      sourceLine: "Sol · Recon Wing",
+      friendlySource: true,
+      sourceActorName: "Recon Wing",
+      sourceActorRole: "Recon Wing",
+    },
+  ];
+
+  const result = await resolveCouncilStateFromEvidence(evidenceItems, {
+    runtimeCapabilities: {
+      ai: {
+        mode: "simulated",
+      },
+    },
+    enrich: ({ composed }) => ({
+      ...composed,
+      notes: composed.notes.map((note) => ({
+        ...note,
+        analysis: `Simulated: ${note.analysis}`,
+      })),
+    }),
+  });
+
+  assert.equal(Array.isArray(result.actors), true);
+  assert.equal(Array.isArray(result.beliefs), true);
+  assert.equal(Array.isArray(result.notes), true);
+  assert.equal(result.notes.every((note) => note.analysis.startsWith("Simulated: ")), true);
+});
+
+test("diplomatic overlay pipeline falls back to the symbolic baseline when enrichment fails validation", async () => {
+  const input = {
+    report: {
+      id: "report:pigeon",
+      type: "dispatch",
+      factionId: "blue",
+      availableDate: "2240-01-07",
+      observedAt: "2240-01-06",
+      sourceSystemId: "sol",
+      content: {
+        packetType: "diplomatic",
+        destinationSystemId: "barnards_star",
+        entries: [
+          "intent:threaten",
+          "subject:barnards_star",
+          "message:Withdraw from Barnard's Star before we answer with force.",
+        ],
+      },
+    },
+    senderFaction: {
+      id: "red",
+      name: "Crimson Wake",
+      profile: {
+        frame: "dynasty",
+        doctrine: "Advance before rivals can settle the frontier.",
+        values: ["expansion", "prestige", "discipline"],
+        voice: {
+          seed: "imperious",
+          style: "court-command certainty",
+          signoff: "By imperial prerogative",
+        },
+      },
+    },
+    recipientFaction: {
+      id: "blue",
+      name: "Aster Crown",
+    },
+    leverage: "high",
+    getSystemName(systemId) {
+      if (systemId === "sol") {
+        return "Sol";
+      }
+      if (systemId === "barnards_star") {
+        return "Barnard's Star";
+      }
+      return systemId;
+    },
+  };
+
+  const baseline = diplomaticPigeonOverlayPipeline.runSymbolic(input).output;
+  const result = await diplomaticPigeonOverlayPipeline.run(input, {
+    aiMode: "simulated",
+    enrich: () => ({
+      id: "broken-pigeon",
+      packetType: "diplomatic",
+      rendered: {
+        title: 7,
+      },
+    }),
+  });
+
+  assert.equal(result.meta.stageState.enrich, "completed");
+  assert.equal(result.meta.stageState.validate, "failed");
+  assert.deepEqual(result.output, baseline);
+});
+
+test("diplomatic schema resolver keeps the symbolic shape while honoring simulated mode", async () => {
+  const result = await resolveDiplomaticPigeonSchema({
+    report: {
+      id: "report:pigeon",
+      type: "dispatch",
+      factionId: "blue",
+      availableDate: "2240-01-07",
+      observedAt: "2240-01-06",
+      sourceSystemId: "sol",
+      content: {
+        packetType: "diplomatic",
+        destinationSystemId: "barnards_star",
+        entries: [
+          "intent:clarify",
+          "subject:barnards_star",
+        ],
+      },
+    },
+    senderFaction: {
+      id: "red",
+      name: "Crimson Wake",
+      profile: {
+        frame: "dynasty",
+        doctrine: "Advance before rivals can settle the frontier.",
+        values: ["expansion", "prestige", "discipline"],
+        voice: {
+          seed: "imperious",
+          style: "court-command certainty",
+          signoff: "By imperial prerogative",
+        },
+      },
+    },
+    recipientFaction: {
+      id: "blue",
+      name: "Aster Crown",
+    },
+    leverage: "balanced",
+    getSystemName(systemId) {
+      if (systemId === "sol") {
+        return "Sol";
+      }
+      if (systemId === "barnards_star") {
+        return "Barnard's Star";
+      }
+      return systemId;
+    },
+  }, {
+    runtimeCapabilities: {
+      ai: {
+        mode: "simulated",
+      },
+    },
+    enrich: ({ composed }) => ({
+      ...composed,
+      rendered: {
+        ...composed.rendered,
+        analysis: `Simulated: ${composed.rendered.analysis}`,
+      },
+    }),
+  });
+
+  assert.equal(result.packetType, "diplomatic");
+  assert.equal(result.rendered.analysis.startsWith("Simulated: "), true);
+});
+
 test("ui state loads scenario through worker and exposes player-facing reports", async () => {
   const store = createCommandState({
     fetchImpl: createWorkerFetch(),
@@ -139,12 +353,30 @@ test("ui state loads scenario through worker and exposes player-facing reports",
   assert.equal(store.currentSeatHomeSystem.value?.name, "Sol");
   assert.equal(store.runtimeCapabilities.value.ai.mode, "off");
   assert.equal(store.runtimeCapabilities.value.surfaces.some((surface) => surface.id === "advisor_desk"), true);
+  assert.deepEqual(
+    store.runtimeCapabilities.value.surfaces.find((surface) => surface.id === "advisor_desk")?.overlayPipeline?.stages,
+    ["derive", "compose", "enrich", "validate"],
+  );
   assert.equal(store.selectedSystemOverview.value?.title, "Sol");
   assert.equal(store.selectedSystemOverview.value?.homeLabel, "Your home system");
   assert.equal(store.summaryCards.value.some((card) => card.label === "Ships"), true);
   assert.equal(store.feedItems.value.some((item) => item.title.includes("Crimson Wake launched an estimated 6 ships toward Barnard's Star")), true);
   assert.equal(store.feedItems.value.some((item) => item.advisorName && item.advisorRole && item.analysis.length > 0), true);
   assert.equal(store.starlaneSegments.value.length > 0, true);
+});
+
+test("ui state forwards the ai mode override through the worker runtime contract", async () => {
+  const store = createCommandState({
+    fetchImpl: createWorkerFetch(),
+    locationSearch: "?scenario=information_probe_warning&seat=blue&ai=simulated",
+  });
+
+  await store.loadInitialData();
+  await nextTick();
+
+  assert.equal(store.runtimeCapabilities.value.ai.requestedMode, "simulated");
+  assert.equal(store.runtimeCapabilities.value.ai.mode, "simulated");
+  assert.equal(store.runtimeCapabilities.value.ai.provider.status, "simulated");
 });
 
 test("advisor desk policy keeps map truth off the reports surface", async () => {
@@ -158,7 +390,7 @@ test("advisor desk policy keeps map truth off the reports surface", async () => 
 
   assert.equal(store.advisorDeskPolicy.advisorOnly, true);
   assert.equal(store.advisorDeskPolicy.mapOwnsWorldIntel, true);
-  assert.equal(store.advisorDeskPolicy.showDiplomaticInbox, true);
+  assert.equal(store.advisorDeskPolicy.showDiplomaticInbox, false);
   assert.equal(store.advisorDeskPolicy.showArchive, true);
   assert.equal(store.advisorDeskPolicy.showRawSignals, false);
   assert.equal(store.advisorDeskPolicy.showReconSummary, false);
@@ -166,7 +398,7 @@ test("advisor desk policy keeps map truth off the reports surface", async () => 
   assert.match(store.advisorDeskPolicy.mapGuidance, /galaxy map/u);
 });
 
-test("ui state groups split advisor readings around the same hostile signal", async () => {
+test("ui state keeps split advisor readings as separate missives tied to the same signal", async () => {
   const store = createCommandState({
     fetchImpl: createWorkerFetch(),
     locationSearch: "?scenario=information_probe_warning&seat=blue",
@@ -175,17 +407,20 @@ test("ui state groups split advisor readings around the same hostile signal", as
   await store.loadInitialData();
   await nextTick();
 
-  const disagreementGroup = store.feedGroups.value.find((group) => group.hasAdvisorDisagreement);
-  assert.equal(Boolean(disagreementGroup), true);
-  assert.equal(disagreementGroup?.notes.length >= 2, true);
+  const sourceCounts = new Map();
+  for (const item of store.feedItems.value.filter((note) => note.actorKind === "advisor" && note.kicker !== "Morning brief")) {
+    sourceCounts.set(item.sourceEvidenceId, (sourceCounts.get(item.sourceEvidenceId) ?? 0) + 1);
+  }
+
+  const sharedSourceId = [...sourceCounts.entries()].find(([, count]) => count >= 2)?.[0] ?? null;
+  const disagreementNotes = store.feedItems.value.filter((note) => note.sourceEvidenceId === sharedSourceId);
+  assert.equal(Boolean(sharedSourceId), true);
+  assert.equal(disagreementNotes.length >= 2, true);
   assert.equal(
-    new Set(disagreementGroup?.notes.filter((note) => note.actorKind === "advisor").map((note) => note.actorId)).size >= 2,
+    new Set(disagreementNotes.filter((note) => note.actorKind === "advisor").map((note) => note.actorId)).size >= 2,
     true,
   );
-  assert.equal(
-    disagreementGroup?.notes.every((note) => note.sourceEvidenceId === disagreementGroup.sourceEvidenceId),
-    true,
-  );
+  assert.equal(disagreementNotes.every((note) => note.sourceEvidenceId === sharedSourceId), true);
 });
 
 test("ui state defaults to the larger starter constellation for local play", async () => {
@@ -216,10 +451,13 @@ test("ui state updates probe status and feed immediately after a successful prob
   await nextTick();
 
   assert.equal(store.api.status, "Probe en route to Tau Ceti");
-  assert.equal(store.ui.activeWorkspace, "probes");
+  assert.equal(store.ui.activeWorkspace, "map");
   assert.equal(store.selectedSystemOverview.value?.probeStatus?.label, "Probe arrives in 2 years");
   assert.equal(store.selectedSystemOverview.value?.probeStatus?.actionable, false);
-  assert.equal(store.feedItems.value[0]?.title, "Aster Crown dispatched a probe toward Tau Ceti");
+  assert.equal(
+    store.feedItems.value.some((item) => item.title === "Aster Crown dispatched a probe toward Tau Ceti"),
+    true,
+  );
   assert.equal(
     store.feedItems.value.some((item) => item.actorKind === "commander" && item.title === "Aster Crown dispatched a probe toward Tau Ceti"),
     true,
@@ -247,14 +485,12 @@ test("ui state tracks workspace navigation and returns to map for command drafti
   assert.equal(store.WORKSPACE_VIEWS[0].key, "reports");
   assert.equal(store.WORKSPACE_VIEWS[0].label, "Advisors");
   assert.equal(store.WORKSPACE_VIEWS[1].key, "map");
+  assert.equal(store.WORKSPACE_VIEWS[1].label, "Galaxy");
+  assert.deepEqual(store.WORKSPACE_VIEWS.map((view) => view.key), ["reports", "map", "diplomacy", "notebook"]);
 
   store.setActiveWorkspace("reports");
   await nextTick();
   assert.equal(store.ui.activeWorkspace, "reports");
-
-  store.setActiveWorkspace("probes");
-  await nextTick();
-  assert.equal(store.ui.activeWorkspace, "probes");
 
   store.setActiveWorkspace("diplomacy");
   await nextTick();
@@ -477,7 +713,22 @@ test("ui state surfaces delivered diplomatic pigeons with symbolic faction voice
     factions: [
       { id: "blue", name: "Aster Crown", homeSystemId: "blue_home" },
       { id: "red", name: "Crimson Wake", homeSystemId: "red_home", commanderProfileId: "chatty" },
-      { id: "green", name: "Verdant Bastion", homeSystemId: "green_home", commanderProfileId: "turtle" },
+      {
+        id: "green",
+        name: "Verdant Bastion",
+        homeSystemId: "green_home",
+        commanderProfileId: "turtle",
+        profile: {
+          frame: "house",
+          doctrine: "Keep the frontier disciplined and legible.",
+          values: ["order", "survival", "discipline"],
+          voice: {
+            seed: "deliberate",
+            style: "fortress restraint",
+            signoff: "By careful seal",
+          },
+        },
+      },
     ],
     systems: [
       {
@@ -600,11 +851,17 @@ test("ui state surfaces delivered diplomatic pigeons with symbolic faction voice
   assert.match(greenItem?.summary ?? "", /advise restraint around Sol/u);
   assert.match(greenItem?.analysis ?? "", /pressure from strength/u);
   assert.match(greenItem?.voiceLabel ?? "", /warning|threat/i);
+  assert.equal(greenItem?.schema?.intent, "threaten");
+  assert.equal(greenItem?.schema?.directives.subjectSystemId, "blue_home");
+  assert.equal(greenItem?.schema?.senderProfile.voice.style, "fortress restraint");
+  assert.equal(greenItem?.schema?.voice.seed, "deliberate");
 
   assert.match(redItem?.title ?? "", /Crimson Wake/u);
   assert.match(redItem?.summary ?? "", /trade survey data instead of racing blind into Sol/u);
   assert.match(redItem?.analysis ?? "", /terms offered from advantage|information play/u);
   assert.notEqual(greenItem?.summary, redItem?.summary);
+  assert.equal(redItem?.schema?.intent, "offer");
+  assert.equal(redItem?.schema?.voice.seed, "opportunistic");
 
   assert.match(greenRow?.latestSignalText ?? "", /advise restraint around Sol/u);
   assert.match(redRow?.latestSignalText ?? "", /trade survey data instead of racing blind into Sol/u);
@@ -738,7 +995,7 @@ test("ui state blocks probe launch from an understocked origin and succeeds afte
     ),
     true,
   );
-  assert.equal(store.ui.activeWorkspace, "probes");
+  assert.equal(store.ui.activeWorkspace, "map");
 });
 
 test("ui state supports multiple friendly probes and shows them in the recon net and on the map", async () => {
@@ -979,7 +1236,7 @@ test("ui state hides sub-threshold foreign launches from other seats", async () 
 
   assert.equal(store.fleetMarkers.value.length, 0);
   assert.equal(
-    store.feedItems.value.some((item) => /Crimson Wake/u.test(item.title)),
+    store.feedItems.value.some((item) => item.kicker !== "Morning brief" && /Crimson Wake/u.test(item.title)),
     false,
   );
 });
@@ -1003,6 +1260,9 @@ test("ui state submits blockade orders as blockade missions", async () => {
   assert.equal(store.api.status, "Blockade order transmitted");
   assert.equal(issuedCommand?.type, "launch_fleet");
   assert.equal(issuedCommand?.mission, "blockade");
+  assert.equal(store.commandCandidatePlan.value.kind, "blockade");
+  assert.equal(store.commandCandidatePlan.value.movement.destinationSystemId, "blue_frontier_a");
+  assert.equal(store.commandCandidatePlan.value.cost.burnSalt, 10);
   assert.equal(store.orderBrief.value?.title, "Blockade Order");
 });
 
@@ -1029,13 +1289,17 @@ test("ui state cites deterministic causal tags for launches and battles", async 
   await store.loadInitialData();
   await nextTick();
 
-  const launchNote = store.feedItems.value.find((item) => item.title === "Blue League launched 7 ships toward Target");
+  const launchNote = store.feedItems.value.find((item) =>
+    item.kicker !== "Morning brief" && item.title === "Blue League launched 7 ships toward Target");
   assert.equal(launchNote?.causes.some((cause) => cause.key === "reserve_stripped"), true);
   assert.equal(launchNote?.causes.some((cause) => cause.key === "route_blockade"), true);
   assert.match(launchNote?.analysis ?? "", /Drivers:/u);
   assert.match(launchNote?.analysis ?? "", /Screen/u);
 
-  const battleNote = store.feedItems.value.find((item) => item.title === "Fighting at Target" && item.causes.some((cause) => cause.key === "intercepted_approach"));
+  const battleNote = store.feedItems.value.find((item) =>
+    item.kicker !== "Morning brief"
+    && item.title === "Fighting at Target"
+    && item.causes.some((cause) => cause.key === "intercepted_approach"));
   assert.equal(Boolean(battleNote), true);
   assert.match(battleNote?.analysis ?? "", /pinned this approach/u);
 });
@@ -1054,7 +1318,7 @@ test("ui state cites probe cover in frontier battle notes", async () => {
   assert.match(battleNote?.analysis ?? "", /friendly probe/u);
 });
 
-test("ui state keeps production schedules and speculation in player planning state", async () => {
+test("ui state keeps production schedules, speculation, and advisor directives in player planning state", async () => {
   const storage = createMemoryStorage();
   const store = createCommandState({
     fetchImpl: createWorkerFetch(),
@@ -1075,6 +1339,8 @@ test("ui state keeps production schedules and speculation in player planning sta
   store.setProductionLineQuantity("blue_home", "yard_2", 1);
   store.setProductionPosture("blue_home", "siege");
   store.setSpeculationText("Verdant Bastion is likely banking ships for Tau Ceti.");
+  store.setAdvisorIntentDraft("Hold a reserve at Sol and let the council plan the exact launches toward Tau Ceti.");
+  store.submitAdvisorIntent();
   store.setStrategicMarking("blue_frontier_a", "expand");
   store.setStrategicMarking("green_home", "threat");
   await nextTick();
@@ -1085,6 +1351,9 @@ test("ui state keeps production schedules and speculation in player planning sta
   assert.equal(updatedHomeRow?.posture, "siege");
   assert.equal(updatedHomeRow?.lines.find((line) => line.id === "yard_2")?.focus, "shipyard");
   assert.equal(store.ui.planner.speculation, "Verdant Bastion is likely banking ships for Tau Ceti.");
+  assert.equal(store.ui.planner.advisorIntentDraft, "");
+  assert.equal(store.advisorOrderItems.value.length, 1);
+  assert.match(store.advisorOrderItems.value[0]?.text ?? "", /Hold a reserve at Sol/u);
   assert.equal(store.strategyBoardSummary.value.total, 2);
   assert.equal(store.strategicMarkingRows.value.some((row) => row.systemId === "blue_frontier_a" && row.value === "expand"), true);
   assert.equal(store.strategicMarkingRows.value.some((row) => row.systemId === "green_home" && row.value === "threat"), true);
@@ -1103,6 +1372,8 @@ test("ui state keeps production schedules and speculation in player planning sta
   assert.equal(reloadedHomeRow?.posture, "siege");
   assert.equal(reloadedHomeRow?.lines.find((line) => line.id === "yard_2")?.focus, "shipyard");
   assert.equal(reloaded.ui.planner.speculation, "Verdant Bastion is likely banking ships for Tau Ceti.");
+  assert.equal(reloaded.advisorOrderItems.value.length, 1);
+  assert.match(reloaded.advisorOrderItems.value[0]?.text ?? "", /Hold a reserve at Sol/u);
   assert.equal(reloaded.strategyBoardSummary.value.total, 2);
   assert.equal(reloaded.strategicMarkingRows.value.some((row) => row.systemId === "blue_frontier_a" && row.value === "expand"), true);
   assert.equal(reloaded.strategicMarkingRows.value.some((row) => row.systemId === "green_home" && row.value === "threat"), true);
@@ -1123,6 +1394,7 @@ test("ui state turns strategic markings into visible council advice", async () =
   await nextTick();
 
   assert.equal(store.selectedSystemOverview.value?.strategicMarking?.label, "Expand");
+  assert.equal(store.selectedSystemAdvisorBriefs.value.length >= 1, true);
   assert.equal(store.STRATEGIC_MARKING_OPTIONS.some((option) => option.value === "future_link"), true);
   assert.equal(store.advisorBriefs.value.some((brief) => brief.advisorId === "marshal" && /pin us|setting the tempo/u.test(brief.headline)), true);
   assert.equal(store.advisorBriefs.value.some((brief) => brief.advisorId === "spymaster" && /trust the picture|blind corner/u.test(`${brief.headline} ${brief.reasoning}`)), true);
@@ -1139,10 +1411,11 @@ test("ui state folds marked expansion targets back into council notes", async ()
   store.setStrategicMarking("blue_frontier_a", "expand");
   await nextTick();
 
-  const expansionGroup = store.feedGroups.value.find((group) => /Barnard's Star/u.test(group.title));
-  assert.match(expansionGroup?.summary ?? "", /Marked expand target/u);
+  const expansionNotes = store.feedItems.value.filter((item) =>
+    item.kicker !== "Morning brief" && /Barnard's Star/u.test(item.title));
+  assert.equal(expansionNotes.some((item) => /Marked expand target/u.test(item.summary ?? "")), true);
   assert.equal(
-    expansionGroup?.notes.some((note) =>
+    expansionNotes.some((note) =>
       /You marked Barnard's Star for expansion/u.test(note.analysis)
       && /Re-open Barnard's Star on the map/u.test(note.reasoning)
     ),
@@ -1160,12 +1433,13 @@ test("ui state calls out marked threat systems inside council notes", async () =
   store.setStrategicMarking("enemy_home", "threat");
   await nextTick();
 
-  const threatGroup = store.feedGroups.value.find((group) =>
-    group.title.includes("Crimson Wake launched an estimated 6 ships toward Barnard's Star"),
+  const threatNotes = store.feedItems.value.filter((item) =>
+    item.kicker !== "Morning brief"
+    && item.title.includes("Crimson Wake launched an estimated 6 ships toward Barnard's Star"),
   );
-  assert.match(threatGroup?.summary ?? "", /Marked threat source/u);
+  assert.equal(threatNotes.some((item) => /Marked threat source/u.test(item.summary ?? "")), true);
   assert.equal(
-    threatGroup?.notes.some((note) =>
+    threatNotes.some((note) =>
       /You marked Tau Ceti as a threat/u.test(note.analysis)
       && /Re-check reserves, probe cover, and nearby lanes/u.test(note.reasoning)
     ),
@@ -1173,7 +1447,7 @@ test("ui state calls out marked threat systems inside council notes", async () =
   );
 });
 
-test("ui state frames the day as opportunity, threat, and lesson", async () => {
+test("ui state frames the day as a morning brief inside the council inbox", async () => {
   const store = createCommandState({
     fetchImpl: createWorkerFetch(),
     locationSearch: "?scenario=profile_frontier_vs_turtle&seat=blue",
@@ -1188,10 +1462,15 @@ test("ui state frames the day as opportunity, threat, and lesson", async () => {
   assert.deepEqual(store.dailyBrief.value?.items.map((item) => item.key), [
     "opportunity",
     "threat",
-    "lesson",
+    "command",
   ]);
   assert.match(store.dailyBrief.value?.items[0]?.title ?? "", /Barnard's Star/u);
   assert.match(store.dailyBrief.value?.items[1]?.title ?? "", /Tau Ceti/u);
   assert.equal(store.dailyBrief.value?.items.every((item) => item.advisorName && item.advisorRole), true);
+  assert.equal(store.dailyBrief.value?.items.some((item) => item.actorKind === "commander"), true);
   assert.equal((store.dailyBrief.value?.items[2]?.summary ?? "").length > 0, true);
+
+  const morningBriefMissives = store.feedItems.value.filter((item) => item.kicker === "Morning brief");
+  assert.equal(morningBriefMissives.length, 3);
+  assert.equal(morningBriefMissives.some((item) => item.actorKind === "commander"), true);
 });

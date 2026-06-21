@@ -10,13 +10,31 @@ The repo now includes a browser command table for driving the simulator against 
 
 This local server uses the compiled worker for `/api/*` routes and serves the static UI from [`public/`](/Users/joshuaevenson/Documents/GitHub/dead_reckoning/public). For Cloudflare deployment, [`wrangler.jsonc`](/Users/joshuaevenson/Documents/GitHub/dead_reckoning/wrangler.jsonc) is configured to serve the same static assets.
 
-The `Advisors` workspace now includes a dedicated diplomatic inbox. Delivered pigeons show up as first-class advisor items with sender attribution, delivery timing, and deterministic consequence framing instead of being reduced to stance summaries alone.
+The worker and local UI now share an explicit runtime AI switch:
 
-The `Advisors` workspace is intentionally advisor-only. It surfaces briefs, notes, dispatches, and pigeons, while hard world facts such as system ownership, probe coverage, stockpiles, and starlane details are only available on the galaxy map. Looking up the real picture should cost attention and time instead of being flattened into the same board as the advice.
+* `?ai=off` keeps every surface on the deterministic symbolic baseline
+* `?ai=simulated` preserves the same overlay interfaces but expects local or test-time enrichers instead of live model calls
+* `?ai=enabled` reserves the live-provider path and currently falls back to the symbolic baseline if no provider is configured
+
+API clients can drive the same switch with the `x-runtime-ai-mode` header when hitting `/api/health` or `/api/simulate` directly.
+
+The `Advisors` workspace is intentionally a single council inbox. It shows commander and advisor missives only, and one of those messages can be the day's morning brief with the council's top focuses instead of living in a separate panel.
+
+The advisor desk now keeps that inbox as a single main column. Processed reports move behind an explicit archive toggle instead of living in a permanent side pane, and the bottom of the desk carries a standing-orders field for high-level intent that can later feed advisor-mediated execution.
+
+Delivered pigeons now arrive as ordinary council missives with sender attribution, delivery timing, and deterministic consequence framing instead of being split into a dedicated diplomatic sub-surface.
 
 Strategic markings now feed both the notebook and the council inbox. If a marked `explore`, `expand`, `threat`, `screen`, `economic_priority`, or `future_link` system becomes the site or source of meaningful pressure, reinforcement, recon, or opportunity movement, the resulting advisor notes call that out explicitly and include a deterministic follow-up prompt.
 
-The current repo also runs in an explicit AI-off mode. The worker exposes a runtime capability contract and the command table surfaces that baseline directly: advisor notes, daily briefs, after-action explanations, diplomatic pigeons, and the opening loop all run through deterministic composition, while current faction identity comes from scenario-authored faction and commander profile data rather than runtime text generation.
+The `Galaxy` workspace is now the canonical home for per-system state. The focused-system sidebar owns strategic markings, probe status, local facts, shipyard posture, and per-yard build plans so the map remains the place where world truth and system management live.
+
+Council notes can be triaged directly from the inbox. Archive clears the live desk without losing the paper trail, while follow-up moves the note into the notebook queue for longer synthesis.
+
+The current repo also runs in an explicit AI-off mode. The worker exposes a runtime capability contract and the command table surfaces that baseline directly: advisor notes, daily briefs, after-action explanations, diplomatic pigeons, and the opening loop all run through deterministic composition, while current faction identity comes from scenario-authored faction profiles and symbolic defaults rather than runtime text generation.
+
+Canonical symbolic schemas now own the current AI-adjacent surfaces. Advisor notes, faction profiles, diplomatic pigeons, and command candidate plans all resolve to stable structured objects, and the repo now carries explicit schema slots for future recap entries and doctrine proposals so later AI overlays extend deterministic data instead of replacing it.
+
+Council composition and diplomatic pigeons now route through a shared `derive -> compose -> enrich -> validate` overlay boundary. The live product still runs the symbolic path only, but future enrichment can attach to those same entry points without forking gameplay logic or changing the canonical output shapes.
 
 ## Locked State Schema
 
@@ -2291,17 +2309,13 @@ These pieces are now implemented in the local command table and should be treate
 
 * the default landing page is now the `Advisors` pane rather than the galactic map
 * the daily loop is framed as one opportunity, one threat, and one lesson
-* the daily brief is surfaced as a distinct morning council brief
-* the main desk is now moving toward a council inbox, with actor-authored notes taking priority over raw event presentation
 * first-pass canonical council schemas now exist for evidence, actors, beliefs, notes, and source-ledger items
 * council note composition now runs through a shared deterministic pass rather than only ad hoc UI decoration
 * hostile signals can now produce split advisor readings with explicit stance and confidence tags presented side by side
 * battle and logistics notes now cite deterministic driver tags such as probe cover, lane blockade, pinned approach, local overmatch, and stripped reserve
 * report items carry named council attribution and consequence-oriented analysis
-* the notebook includes a strategy board and council readout
 * the player can mark systems with strategic intent such as `explore`, `expand`, `threat`, `screen`, `economic_priority`, and `future_link`
 * advisor suggestions already react to those strategic markings
-* reports can be triaged into archive and notebook follow-up queues
 
 ### Standardized Backlog Shape
 
@@ -2323,27 +2337,6 @@ When possible, prefer vertical slices that ship one meaningful new behavior end-
 The baseline path should always land first or at least be landable independently.
 
 ### Phase 0 Foundation Contracts: Symbolic-First Architecture
-
-#### `SYS-02` Canonical Symbolic Schemas
-
-* `Outcome`: advisor items, diplomatic pigeons, recap entries, doctrine proposals, faction profiles, and candidate plans all have canonical structured schemas owned by deterministic code
-* `Scope`: define the structures that symbolic composition and AI enrichment will both use
-* `Done when`: the UI and tests consume stable structured objects rather than format-specific raw strings
-* `Dependencies`: explicit AI-off baseline
-
-#### `SYS-03` Overlay Function Boundaries
-
-* `Outcome`: AI-adjacent features have an explicit `derive -> compose -> enrich -> validate` boundary so the symbolic and AI paths share the same core pipeline
-* `Scope`: document the function split and apply it to the first advisor-facing features
-* `Done when`: future coding agents can add AI enrichment to an existing symbolic feature without forking the gameplay path or duplicating business logic
-* `Dependencies`: `SYS-02`
-
-#### `SYS-04` Runtime Capability Switch
-
-* `Outcome`: the product can run with AI disabled, simulated, or enabled without changing the surrounding gameplay code
-* `Scope`: define feature flags, provider boundaries, fallback behavior, and developer ergonomics for switching modes
-* `Done when`: the same feature can execute symbolically in tests and optionally use AI at runtime through the same public interface
-* `Dependencies`: `SYS-02`, `SYS-03`
 
 #### `SYS-05` Symbolic Fixtures And Golden Outputs
 

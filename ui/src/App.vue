@@ -12,7 +12,6 @@ const store = useCommandState();
 const {
   ORDER_ACTIONS,
   WORKSPACE_VIEWS,
-  PRODUCTION_FOCUS_OPTIONS,
   PRODUCTION_LINE_FOCUS_OPTIONS,
   PRODUCTION_POSTURE_OPTIONS,
   STRATEGIC_MARKING_OPTIONS,
@@ -20,22 +19,11 @@ const {
   world,
   ui,
   currentSeat,
-  currentSeatHomeSystem,
-  runtimeCapabilities,
   selectedSystem,
-  selectedSystemFriendly,
   selectedSystemOverview,
+  selectedSystemProductionRow,
   summaryCards,
-  strategicMarkingRows,
-  strategyBoardSummary,
-  advisorDeskPolicy,
-  advisorBriefs,
-  dailyBrief,
-  productionPlannerRows,
-  probeCommandRows,
-  shipOperationRows,
-  shipOperationSummary,
-  shipOperationOriginRows,
+  selectedSystemAdvisorBriefs,
   diplomacyRows,
   diplomacySummary,
   mapLayout,
@@ -44,10 +32,8 @@ const {
   probeMarkers,
   starlaneSegments,
   feedItems,
-  feedGroups,
   archivedReportItems,
   notebookTodoItems,
-  diplomaticInboxItems,
   reconSummary,
   orderBrief,
   orderSubmission,
@@ -70,20 +56,21 @@ const {
   setSelectedSystemId,
   setActiveAction,
   setActiveWorkspace,
+  setReportsTab,
   prepareProbeForSystem,
   setProbeOriginSystemId,
   archiveReportItem,
   markReportForFollowUp,
   restoreReportToInbox,
-  setProductionFocus,
-  setProductionQuantity,
   setProductionPosture,
   setProductionLineFocus,
   setProductionLineQuantity,
   setStrategicMarking,
   clearStrategicMarking,
+  setAdvisorIntentDraft,
   setSpeculationText,
   submitImmediateProbe,
+  submitAdvisorIntent,
   submitActiveOrder,
 } = store;
 
@@ -130,6 +117,14 @@ function openSystemOnMap(systemId) {
   selectSystem(systemId);
 }
 
+function formatReportSender(name, meta) {
+  if (!meta) {
+    return name;
+  }
+
+  return `${name} (${String(meta).replaceAll(" · ", " - ")})`;
+}
+
 function activeFleetOriginId() {
   return ui.orderDraft.originSystemId ?? null;
 }
@@ -149,10 +144,6 @@ function orderDockReady() {
   }
 
   return Boolean(activeFleetOriginId());
-}
-
-function openActionWorkspace() {
-  setActiveWorkspace(ui.activeAction === "deploy_probe" ? "probes" : "operations");
 }
 
 watch(
@@ -177,10 +168,10 @@ onMounted(async () => {
 
 <template>
   <div class="app-shell">
-    <header class="command-header">
-      <div class="header-brand">
-        <span class="header-eyebrow">Dead Reckoning</span>
-        <span class="header-title">Command Table</span>
+    <header v-if="currentSeat || world.result || summaryCards.length" class="command-header">
+      <div class="header-meta">
+        <Tag v-if="currentSeat" severity="contrast" rounded>{{ currentSeat.faction.name }}</Tag>
+        <Tag v-if="world.result" severity="info" rounded>{{ world.result.endDate }}</Tag>
       </div>
 
       <div v-if="summaryCards.length" class="header-analytics">
@@ -188,14 +179,6 @@ onMounted(async () => {
           <span class="analytics-label">{{ card.label }}</span>
           <span class="analytics-value">{{ card.value }}</span>
         </div>
-      </div>
-
-      <div class="header-meta">
-        <Tag v-if="currentSeat" severity="contrast" rounded>{{ currentSeat.faction.name }}</Tag>
-        <Tag v-if="currentSeatHomeSystem" severity="secondary" rounded>Home: {{ currentSeatHomeSystem.name }}</Tag>
-        <Tag v-if="world.result" severity="info" rounded>{{ world.result.endDate }}</Tag>
-        <Tag v-if="runtimeCapabilities" severity="secondary" rounded>{{ runtimeCapabilities.ai.label }}</Tag>
-        <Tag :severity="api.tone" rounded>{{ api.status }}</Tag>
       </div>
     </header>
 
@@ -392,6 +375,95 @@ onMounted(async () => {
                     </div>
                   </div>
 
+                  <div class="system-marking-panel">
+                    <div class="panel-kicker">Advisor Readout</div>
+                    <div v-if="selectedSystemAdvisorBriefs.length > 0" class="advisor-brief-list system-advisor-list">
+                      <article
+                        v-for="brief in selectedSystemAdvisorBriefs"
+                        :key="brief.advisorId"
+                        :class="['feed-card', 'feed-card-compact', `feed-tone-${brief.severity === 'contrast' ? 'info' : brief.severity}`]"
+                      >
+                        <div class="feed-card-top">
+                          <div class="feed-kicker">{{ brief.role }}</div>
+                          <Tag :severity="brief.severity" rounded>{{ brief.advisorName }}</Tag>
+                        </div>
+                        <div class="feed-title">{{ brief.headline }}</div>
+                        <p class="feed-copy">{{ brief.summary }}</p>
+                        <p class="feed-impact"><span>Why:</span> {{ brief.reasoning }}</p>
+                      </article>
+                    </div>
+                    <div v-else class="notebook-copy">
+                      Mark this system on the galaxy view and the council will start framing briefs around that priority.
+                    </div>
+                  </div>
+
+                  <div v-if="selectedSystemProductionRow" class="system-marking-panel">
+                    <div class="panel-kicker">Shipyards And Builds</div>
+                    <div class="production-top production-top-local">
+                      <div>
+                        <strong>{{ selectedSystemProductionRow.systemName }}</strong>
+                        <div class="production-meta">{{ selectedSystemProductionRow.outputText }}</div>
+                        <div class="production-meta">
+                          Infrastructure {{ selectedSystemProductionRow.infrastructure }} ·
+                          {{ selectedSystemProductionRow.shipyardCount }} active shipyards
+                        </div>
+                      </div>
+                      <div class="production-stores">{{ selectedSystemProductionRow.storesText }}</div>
+                    </div>
+
+                    <div class="production-fields production-fields-map">
+                      <div class="production-field">
+                        <label>Posture</label>
+                        <Select
+                          :model-value="selectedSystemProductionRow.posture"
+                          :options="PRODUCTION_POSTURE_OPTIONS"
+                          option-label="label"
+                          option-value="value"
+                          fluid
+                          @update:model-value="(value) => setProductionPosture(selectedSystemProductionRow.systemId, value)"
+                        />
+                      </div>
+                    </div>
+
+                    <div class="shipyard-lines">
+                      <div
+                        v-for="line in selectedSystemProductionRow.lines"
+                        :key="line.id"
+                        class="shipyard-line"
+                      >
+                        <div class="shipyard-line-head">
+                          <strong>{{ line.yardLabel }}</strong>
+                          <span>{{ line.summary }}</span>
+                        </div>
+
+                        <div class="production-fields shipyard-line-fields">
+                          <div class="production-field">
+                            <label>Build</label>
+                            <Select
+                              :model-value="line.focus"
+                              :options="PRODUCTION_LINE_FOCUS_OPTIONS"
+                              option-label="label"
+                              option-value="value"
+                              fluid
+                              @update:model-value="(value) => setProductionLineFocus(selectedSystemProductionRow.systemId, line.id, value)"
+                            />
+                          </div>
+
+                          <div class="production-field production-quantity">
+                            <label>Target</label>
+                            <InputNumber
+                              :model-value="line.quantity"
+                              :min="line.focus === 'idle' ? 0 : 1"
+                              show-buttons
+                              fluid
+                              @update:model-value="(value) => setProductionLineQuantity(selectedSystemProductionRow.systemId, line.id, value)"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   <div
                     v-if="selectedSystemOverview.probeStatus && !selectedSystemOverview.canSeeLocalIntel"
                     class="system-probe-callout system-probe-sidebar-callout"
@@ -467,9 +539,9 @@ onMounted(async () => {
 
               <div class="orders-status">
                 <div>
-                  <div class="panel-kicker">Orders Dock</div>
-                  <div class="panel-title">Execute Orders Here</div>
-                  <div class="orders-status-copy">Choose an action, set the fields below, and use the main button on the right to execute the order immediately.</div>
+                  <div class="panel-kicker">Manual Orders Dock</div>
+                  <div class="panel-title">Precise System Orders</div>
+                  <div class="orders-status-copy">Use the galaxy view when you want to issue explicit fleet, trade, blockade, or probe orders yourself.</div>
                 </div>
                 <Tag :severity="orderDockReady() ? 'success' : 'secondary'" rounded>
                   {{ ui.activeAction === 'deploy_probe' ? (ui.orderDraft.anchorId || selectedSystem ? "Target selected" : "Choose target") : (activeFleetOriginId() ? "Ready to order" : "Choose origin") }}
@@ -551,13 +623,9 @@ onMounted(async () => {
                       <div class="orders-underway-title">{{ actionUnderway.title }}</div>
                       <p class="orders-underway-copy">{{ actionUnderway.summary }}</p>
                     </div>
-                    <Button
-                      :label="ui.activeAction === 'deploy_probe' ? 'Open Probe Operations' : 'Open Ship Operations'"
-                      icon="pi pi-arrow-right"
-                      severity="secondary"
-                      outlined
-                      @click="openActionWorkspace"
-                    />
+                    <div class="orders-underway-copy">
+                      Probes, fleets, and build posture stay visible on the galaxy map now instead of separate operations boards.
+                    </div>
                   </div>
                 </div>
 
@@ -582,193 +650,6 @@ onMounted(async () => {
               </div>
             </div>
           </section>
-        </section>
-
-        <section v-else-if="ui.activeWorkspace === 'probes'" class="workspace-page workspace-probes-page">
-          <section class="feed-panel probes-main-panel">
-            <div class="feed-header">
-              <div>
-                <div class="panel-kicker">Recon Network</div>
-                <div class="panel-title">Probe Operations</div>
-              </div>
-              <Tag severity="info" rounded>{{ reconSummary.total }} active probes</Tag>
-            </div>
-
-            <div class="probe-operations-scroll">
-              <article
-                v-for="item in reconSummary.items"
-                :key="item.probeId"
-                :class="['feed-card probe-feed-card', `feed-tone-${item.status === 'on_station' ? 'success' : 'info'}`]"
-              >
-                <div class="feed-card-top">
-                  <div class="feed-kicker">{{ item.status === 'on_station' ? 'On station' : 'Transit' }}</div>
-                  <Tag :severity="item.status === 'on_station' ? 'success' : 'info'" rounded>
-                    {{ item.status === 'on_station' ? 'Live Intel' : item.statusLabel }}
-                  </Tag>
-                </div>
-                <div class="feed-title">{{ item.label }}</div>
-                <p class="feed-copy">{{ item.detail }}</p>
-                <p class="feed-impact">
-                  <span>Origin:</span>
-                  {{ item.originSystemId ? translateSystemId(item.originSystemId) : "Unknown" }}
-                </p>
-                <div class="probe-feed-actions">
-                  <Button
-                    label="Open On Map"
-                    icon="pi pi-globe"
-                    severity="secondary"
-                    outlined
-                    @click="openSystemOnMap(item.systemId)"
-                  />
-                </div>
-              </article>
-
-              <div v-if="reconSummary.total === 0" class="planning-empty probes-empty">
-                No active probes yet. Launch reconnaissance from a friendly system to start building the picture.
-              </div>
-            </div>
-          </section>
-
-          <aside class="probes-sidebar">
-            <section class="reports-side-panel probe-depots-panel">
-              <div class="planning-header">
-                <div>
-                  <div class="panel-kicker">Ready Stores</div>
-                  <div class="panel-title">Probe Depots</div>
-                </div>
-              </div>
-
-              <div class="probe-depot-list">
-                <div
-                  v-for="row in probeCommandRows"
-                  :key="row.systemId"
-                  class="probe-depot-card"
-                >
-                  <div class="probe-depot-top">
-                    <strong>{{ row.systemName }}</strong>
-                    <Tag :severity="row.launchCapable ? 'success' : 'secondary'" rounded>
-                      {{ row.launchCapable ? "Launch Ready" : "Stock Up" }}
-                    </Tag>
-                  </div>
-                  <div class="probe-depot-meta">{{ row.readyProbes }} ready probes · {{ row.saltStockpile }} salt</div>
-                  <div class="probe-depot-meta">{{ row.outgoingTransit }} outbound · {{ row.localCoverage }} local coverage</div>
-                  <Button
-                    label="Open On Map"
-                    icon="pi pi-globe"
-                    severity="secondary"
-                    outlined
-                    @click="openSystemOnMap(row.systemId)"
-                  />
-                </div>
-              </div>
-            </section>
-          </aside>
-        </section>
-
-        <section v-else-if="ui.activeWorkspace === 'operations'" class="workspace-page workspace-operations-page">
-          <section class="feed-panel operations-main-panel">
-            <div class="feed-header">
-              <div>
-                <div class="panel-kicker">Fleet Network</div>
-                <div class="panel-title">Ship Operations</div>
-              </div>
-              <Tag severity="info" rounded>{{ shipOperationSummary.total }} active fleets</Tag>
-            </div>
-
-            <div class="probe-operations-scroll">
-              <article
-                v-for="item in shipOperationRows"
-                :key="item.fleetId"
-                :class="['feed-card probe-feed-card', `feed-tone-${item.focus ? 'success' : item.status === 'transit' ? 'info' : 'warn'}`]"
-              >
-                <div class="feed-card-top">
-                  <div class="feed-kicker">{{ item.missionLabel }}</div>
-                  <Tag :severity="item.focus ? 'success' : item.status === 'transit' ? 'info' : 'warn'" rounded>
-                    {{ item.statusLabel }}
-                  </Tag>
-                </div>
-                <div class="feed-title">{{ item.title }}</div>
-                <p class="feed-copy">{{ item.detail }}</p>
-                <p class="feed-impact">
-                  <span>Origin:</span>
-                  {{ item.originName }}
-                </p>
-                <div class="probe-feed-actions">
-                  <Button
-                    label="Open On Map"
-                    icon="pi pi-globe"
-                    severity="secondary"
-                    outlined
-                    @click="openSystemOnMap(item.mapSystemId)"
-                  />
-                </div>
-              </article>
-
-              <div v-if="shipOperationSummary.total === 0" class="planning-empty probes-empty">
-                No ship operations are currently underway. Execute an order from the map dock to start moving fleets.
-              </div>
-            </div>
-          </section>
-
-          <aside class="probes-sidebar operations-sidebar">
-            <section class="reports-side-panel operations-summary-panel">
-              <div class="planning-header">
-                <div>
-                  <div class="panel-kicker">Operations Board</div>
-                  <div class="panel-title">Mission Summary</div>
-                </div>
-                <Tag severity="contrast" rounded>
-                  {{ shipOperationSummary.focusMission ? `${shipOperationSummary.focusLabel}: ${shipOperationSummary.focusCount}` : `${shipOperationSummary.inTransit} in transit` }}
-                </Tag>
-              </div>
-
-              <div class="operations-summary-grid">
-                <div
-                  v-for="item in shipOperationSummary.byMission"
-                  :key="item.mission"
-                  :class="['operations-summary-card', { focus: shipOperationSummary.focusMission === item.mission }]"
-                >
-                  <strong>{{ item.label }}</strong>
-                  <span>{{ item.count }} active</span>
-                </div>
-              </div>
-            </section>
-
-            <section class="reports-side-panel operations-origin-panel">
-              <div class="planning-header">
-                <div>
-                  <div class="panel-kicker">Active Origins</div>
-                  <div class="panel-title">Launch Systems</div>
-                </div>
-              </div>
-
-              <div class="operations-origin-list">
-                <div
-                  v-for="row in shipOperationOriginRows"
-                  :key="row.systemId"
-                  class="probe-depot-card"
-                >
-                  <div class="probe-depot-top">
-                    <strong>{{ row.systemName }}</strong>
-                    <Tag :severity="row.focusCount > 0 ? 'success' : 'secondary'" rounded>
-                      {{ row.total }} active
-                    </Tag>
-                  </div>
-                  <div class="probe-depot-meta">{{ row.transitCount }} in transit · {{ row.focusCount }} in current action</div>
-                  <Button
-                    label="Open On Map"
-                    icon="pi pi-globe"
-                    severity="secondary"
-                    outlined
-                    @click="openSystemOnMap(row.systemId)"
-                  />
-                </div>
-                <div v-if="shipOperationOriginRows.length === 0" class="planning-empty probes-empty">
-                  No active launch systems yet.
-                </div>
-              </div>
-            </section>
-          </aside>
         </section>
 
         <section v-else-if="ui.activeWorkspace === 'diplomacy'" class="workspace-page workspace-diplomacy-page">
@@ -887,330 +768,124 @@ onMounted(async () => {
         <section v-else-if="ui.activeWorkspace === 'reports'" class="workspace-page workspace-reports-page">
           <section class="feed-panel reports-main-panel">
             <div class="feed-header">
-              <div>
-                <div class="panel-kicker">Advisors</div>
-                <div class="panel-title">Advisor Desk</div>
-              </div>
-              <Tag severity="info" rounded>{{ feedItems.length }} open</Tag>
+              <div class="panel-title">Advisors and Commanders</div>
+              <Button
+                :label="ui.reportsTab === 'archive' ? 'Inbox' : 'Archive'"
+                severity="secondary"
+                text
+                size="small"
+                @click="setReportsTab(ui.reportsTab === 'archive' ? 'inbox' : 'archive')"
+              />
             </div>
 
-            <div class="reports-main-stack">
-              <div v-if="runtimeCapabilities || dailyBrief" class="reports-summary-stack">
-                <section v-if="runtimeCapabilities" class="reports-capability-section">
-                  <div class="planning-header reports-capability-header">
-                    <div>
-                      <div class="panel-kicker">Runtime</div>
-                      <div class="panel-title">{{ runtimeCapabilities.ai.label }} Symbolic Baseline</div>
-                    </div>
-                    <Tag severity="secondary" rounded>{{ runtimeCapabilities.surfaces.length }} covered</Tag>
-                  </div>
-                  <div class="reports-brief-copy">
-                    {{ runtimeCapabilities.ai.summary }}
-                  </div>
-                  <div class="reports-capability-body">
-                    <div class="reports-capability-summary">
-                      {{ runtimeCapabilities.summary }}
-                    </div>
-                    <div class="reports-capability-grid">
-                      <article
-                        v-for="surface in runtimeCapabilities.surfaces"
-                        :key="surface.id"
-                        class="feed-card reports-capability-card feed-tone-info"
-                      >
-                        <div class="feed-card-top">
-                          <div class="feed-kicker">{{ surface.label }}</div>
-                          <Tag :severity="surface.baseline === 'scenario_seeded' ? 'contrast' : 'info'" rounded>
-                            {{ surface.baseline === "scenario_seeded" ? "Scenario seeded" : "Symbolic" }}
-                          </Tag>
-                        </div>
-                        <p class="feed-copy">{{ surface.summary }}</p>
-                      </article>
-                    </div>
-                  </div>
-                </section>
-
-                <section v-if="dailyBrief" class="reports-brief-section">
-                  <div class="planning-header reports-brief-header">
-                    <div>
-                      <div class="panel-kicker">Morning Brief</div>
-                      <div class="panel-title">Council Priorities</div>
-                    </div>
-                    <Tag severity="contrast" rounded>{{ dailyBrief.date }}</Tag>
-                  </div>
-                  <div class="reports-brief-copy">
-                    These are the council's pushed priorities for the day. The inbox below is where individual advisors and commanders make their case.
-                  </div>
-
-                  <div class="reports-brief-list">
-                    <article
-                      v-for="item in dailyBrief.items"
-                      :key="item.key"
-                      :class="[
-                        'feed-card',
-                        'reports-brief-card',
-                        `feed-tone-${item.severity === 'contrast' ? 'info' : item.severity}`,
-                      ]"
-                    >
-                      <div class="feed-card-top">
-                        <div class="feed-kicker">{{ item.label }}</div>
-                        <Tag :severity="item.severity" rounded>{{ item.advisorName }}</Tag>
-                      </div>
-                      <div class="feed-title">{{ item.title }}</div>
-                      <div class="feed-byline">{{ item.advisorRole }} · {{ item.source }}</div>
-                      <p class="feed-copy">{{ item.summary }}</p>
-                    </article>
-                  </div>
-                </section>
-              </div>
-
-              <section class="reports-queue-section">
-                <div class="planning-header reports-queue-header">
-                  <div>
-                    <div class="panel-kicker">Council Inbox</div>
-                    <div class="panel-title">Advisor And Commander Notes</div>
-                  </div>
-                  <Tag severity="info" rounded>{{ feedItems.length }} open</Tag>
-                </div>
-
-                <div v-if="feedGroups.length > 0" class="feed-scroll reports-scroll">
-                  <article
-                    v-for="group in feedGroups"
-                    :key="group.id"
-                    :class="['feed-card', 'reports-feed-group', `feed-tone-${group.tone}`]"
-                  >
-                    <div class="feed-card-top">
-                      <div class="feed-kicker">{{ group.kicker }}</div>
-                      <div class="reports-feed-badges">
-                        <Tag v-if="group.hasAdvisorDisagreement" severity="warn" rounded>Split reading</Tag>
-                        <Tag :severity="group.tone" rounded>{{ group.date }}</Tag>
-                      </div>
-                    </div>
-                    <div class="feed-title">{{ group.title }}</div>
-                    <div class="feed-byline">
-                      <span v-if="group.hasAdvisorDisagreement">Shared signal</span><span v-if="group.hasAdvisorDisagreement && group.sourceLine"> · </span><span v-if="group.sourceLine">{{ group.sourceLine }}</span>
-                    </div>
-                    <p class="feed-copy">{{ group.summary }}</p>
-
-                    <div :class="['reports-note-grid', group.hasAdvisorDisagreement ? 'reports-note-grid-split' : '']">
-                      <section
-                        v-for="item in group.notes"
-                        :key="item.id"
-                        class="reports-note-card"
-                      >
-                        <div class="feed-card-top reports-note-top">
-                          <div>
-                            <div class="feed-kicker">{{ item.actorLabel }}</div>
-                            <div class="reports-note-title">{{ item.advisorName }}</div>
-                          </div>
-                          <div class="reports-note-tags">
-                            <Tag severity="secondary" rounded>{{ item.stanceLabel }}</Tag>
-                            <Tag :severity="item.confidenceSeverity" rounded>{{ item.confidenceLabel }}</Tag>
-                          </div>
-                        </div>
-                        <div class="feed-byline">{{ item.advisorRole }}</div>
-                        <p class="feed-impact"><span>Consequence:</span> {{ item.analysis }}</p>
-                        <div v-if="item.causes?.length" class="reports-note-causes">
-                          <Tag
-                            v-for="cause in item.causes"
-                            :key="`${item.id}:${cause.key}:${cause.label}`"
-                            :severity="cause.severity"
-                            rounded
-                          >
-                            {{ cause.label }}
-                          </Tag>
-                        </div>
-                        <p v-if="item.reasoning" class="reports-note-reasoning">{{ item.reasoning }}</p>
-                        <div class="feed-actions">
-                          <Button
-                            label="Follow Up"
-                            icon="pi pi-bookmark"
-                            severity="secondary"
-                            outlined
-                            @click="markReportForFollowUp(item)"
-                          />
-                          <Button
-                            label="Archive"
-                            icon="pi pi-check"
-                            severity="contrast"
-                            @click="archiveReportItem(item)"
-                          />
-                        </div>
-                      </section>
-                    </div>
-                  </article>
-                </div>
-                <div v-else class="map-empty-state reports-empty-state reports-empty-main">
-                  The live queue is clear. Archived items remain available on the right, and anything marked for follow-up waits in the private notebook.
-                </div>
-              </section>
-            </div>
-          </section>
-
-          <aside class="reports-sidebar">
-            <section v-if="advisorDeskPolicy.showDiplomaticInbox" class="reports-side-panel report-archive-panel">
-              <div class="planning-header">
-                <div>
-                  <div class="panel-kicker">Diplomatic Inbox</div>
-                  <div class="panel-title">Delivered Pigeons</div>
-                </div>
-                <Tag severity="secondary" rounded>{{ diplomaticInboxItems.length }} signals</Tag>
-              </div>
-
-              <div v-if="diplomaticInboxItems.length > 0" class="report-triage-list">
+            <section class="reports-queue-section">
+              <div v-if="ui.reportsTab === 'inbox' && feedItems.length > 0" class="feed-scroll reports-scroll">
                 <article
-                  v-for="item in diplomaticInboxItems"
-                  :key="`dispatch-${item.id}`"
-                  :class="['feed-card', 'feed-card-compact', `feed-tone-${item.tone}`]"
+                  v-for="item in feedItems"
+                  :key="item.id"
+                  :class="['feed-card', 'reports-missive-card', `feed-tone-${item.tone}`]"
                 >
-                  <div class="feed-card-top">
-                    <div class="feed-kicker">{{ item.kicker }}</div>
-                    <Tag :severity="item.queueStateSeverity" rounded>{{ item.queueStateLabel }}</Tag>
+                  <div class="reports-missive-sender">
+                    <div class="reports-missive-name">{{ formatReportSender(item.advisorName, item.missiveMeta) }}</div>
+                    <div class="reports-missive-date">{{ item.date }}</div>
                   </div>
                   <div class="feed-title">{{ item.title }}</div>
-                  <div class="feed-byline">{{ item.date }} · {{ item.sourceLine }}</div>
-                  <p class="feed-copy">{{ item.summary }}</p>
-                  <p class="feed-impact"><span>Implication:</span> {{ item.analysis }}</p>
+                  <div class="reports-missive-body">
+                    <p
+                      v-for="(paragraph, index) in item.missiveParagraphs"
+                      :key="`${item.id}:paragraph:${index}`"
+                      class="feed-copy"
+                    >
+                      {{ paragraph }}
+                    </p>
+                  </div>
+                  <div class="feed-actions reports-card-actions">
+                    <Button
+                      label="Follow up"
+                      severity="secondary"
+                      text
+                      size="small"
+                      @click="markReportForFollowUp(item)"
+                    />
+                    <Button
+                      label="Archive"
+                      severity="secondary"
+                      text
+                      size="small"
+                      @click="archiveReportItem(item)"
+                    />
+                  </div>
                 </article>
               </div>
-              <div v-else class="map-empty-state reports-empty-state">
-                No diplomatic pigeons have reached the desk yet.
-              </div>
-            </section>
 
-            <section class="reports-side-panel report-archive-panel">
-              <div class="planning-header">
-                <div>
-                  <div class="panel-kicker">Desk Boundary</div>
-                  <div class="panel-title">Advisor Surface Only</div>
-                </div>
-                <Tag severity="contrast" rounded>Map holds truth</Tag>
-              </div>
-              <p class="feed-copy">{{ advisorDeskPolicy.summary }}</p>
-              <p class="feed-impact"><span>Go to map:</span> {{ advisorDeskPolicy.mapGuidance }}</p>
-            </section>
-
-            <section v-if="advisorDeskPolicy.showArchive" class="reports-side-panel report-archive-panel">
-              <div class="planning-header">
-                <div>
-                  <div class="panel-kicker">Archive</div>
-                  <div class="panel-title">Processed Reports</div>
-                </div>
-                <Tag severity="secondary" rounded>{{ archivedReportItems.length }} stored</Tag>
-              </div>
-
-              <div v-if="archivedReportItems.length > 0" class="report-triage-list">
+              <div v-else-if="ui.reportsTab === 'archive' && archivedReportItems.length > 0" class="feed-scroll reports-scroll">
                 <article
                   v-for="item in archivedReportItems"
                   :key="`archive-${item.id}`"
-                  :class="['feed-card', 'feed-card-compact', `feed-tone-${item.tone}`]"
+                  :class="['feed-card', 'reports-missive-card', `feed-tone-${item.tone}`]"
                 >
-                  <div class="feed-card-top">
-                    <div class="feed-kicker">{{ item.kicker }}</div>
-                    <Tag :severity="item.tone" rounded>{{ item.date }}</Tag>
+                  <div class="reports-missive-sender">
+                    <div class="reports-missive-name">
+                      {{ formatReportSender(item.advisorName ?? item.actorName ?? "Council", item.missiveMeta || `${item.actorLabel ?? "Council"} · ${item.advisorRole ?? item.kicker}`) }}
+                    </div>
+                    <div class="reports-missive-date">{{ item.date }}</div>
                   </div>
                   <div class="feed-title">{{ item.title }}</div>
-                  <div class="feed-byline">
-                    {{ item.actorLabel ?? "Council" }} · {{ item.advisorName ?? "Advisor queue" }} · {{ item.advisorRole ?? item.kicker }}<span v-if="item.sourceLine"> · {{ item.sourceLine }}</span>
+                  <div class="reports-missive-body">
+                    <p
+                      v-for="(paragraph, index) in item.missiveParagraphs"
+                      :key="`${item.id}:archive:${index}`"
+                      class="feed-copy"
+                    >
+                      {{ paragraph }}
+                    </p>
                   </div>
-                  <p class="feed-copy">{{ item.summary }}</p>
-                  <div class="feed-actions feed-actions-compact">
+                  <div class="feed-actions reports-card-actions">
                     <Button
                       label="Restore"
-                      icon="pi pi-replay"
                       severity="secondary"
-                      outlined
+                      text
+                      size="small"
                       @click="restoreReportToInbox(item.id)"
                     />
                     <Button
-                      label="Follow Up"
-                      icon="pi pi-bookmark"
+                      label="Follow up"
                       severity="secondary"
                       text
+                      size="small"
                       @click="markReportForFollowUp(item)"
                     />
                   </div>
                 </article>
               </div>
-              <div v-else class="map-empty-state reports-empty-state">
+
+              <div v-else-if="ui.reportsTab === 'inbox'" class="map-empty-state reports-empty-state reports-empty-main">
+                The live queue is clear. Open the archive if you want the paper trail, and move anything longer-lived into notes as follow-up.
+              </div>
+              <div v-else class="map-empty-state reports-empty-state reports-empty-main">
                 Archive items here to keep the live queue short without losing the paper trail.
               </div>
             </section>
-          </aside>
-        </section>
 
-        <section v-else-if="ui.activeWorkspace === 'production'" class="workspace-page workspace-production-page">
-          <section class="planning-strip production-main-panel">
-            <div class="planning-header">
-              <div>
-                <div class="panel-kicker">Campaign Board</div>
-                <div class="panel-title">Production Schedules</div>
-              </div>
-              <Tag severity="secondary" rounded>{{ productionPlannerRows.length }} systems</Tag>
-            </div>
+            <section class="reports-order-panel">
+              <Textarea
+                :model-value="ui.planner.advisorIntentDraft"
+                class="reports-order-textarea"
+                rows="1"
+                auto-resize
+                placeholder="Standing orders..."
+                @update:model-value="setAdvisorIntentDraft"
+              />
 
-            <div v-if="productionPlannerRows.length > 0" class="production-sheet production-sheet-full">
-              <div v-for="row in productionPlannerRows" :key="row.systemId" class="production-row production-row-large">
-                <div class="production-top">
-                  <div>
-                    <strong>{{ row.systemName }}</strong>
-                    <div class="production-meta">{{ row.outputText }}</div>
-                    <div class="production-meta">Infrastructure {{ row.infrastructure }} · {{ row.shipyardCount }} active shipyards</div>
-                  </div>
-                  <div class="production-stores">{{ row.storesText }}</div>
-                </div>
-
-                <div class="production-fields production-fields-wide">
-                  <div class="production-field">
-                    <label>Posture</label>
-                    <Select
-                      :model-value="row.posture"
-                      :options="PRODUCTION_POSTURE_OPTIONS"
-                      option-label="label"
-                      option-value="value"
-                      fluid
-                      @update:model-value="(value) => setProductionPosture(row.systemId, value)"
-                    />
-                  </div>
-                </div>
-
-                <div class="shipyard-lines">
-                  <div v-for="line in row.lines" :key="line.id" class="shipyard-line">
-                    <div class="shipyard-line-head">
-                      <strong>{{ line.yardLabel }}</strong>
-                      <span>{{ line.summary }}</span>
-                    </div>
-
-                    <div class="production-fields production-fields-wide shipyard-line-fields">
-                      <div class="production-field">
-                        <label>Build</label>
-                        <Select
-                          :model-value="line.focus"
-                          :options="PRODUCTION_LINE_FOCUS_OPTIONS"
-                          option-label="label"
-                          option-value="value"
-                          fluid
-                          @update:model-value="(value) => setProductionLineFocus(row.systemId, line.id, value)"
-                        />
-                      </div>
-
-                      <div class="production-field production-quantity">
-                        <label>Target</label>
-                        <InputNumber
-                          :model-value="line.quantity"
-                          :min="line.focus === 'idle' ? 0 : 1"
-                          show-buttons
-                          fluid
-                          @update:model-value="(value) => setProductionLineQuantity(row.systemId, line.id, value)"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div v-else class="planning-empty production-empty">
-              Hold a system to begin drafting production schedules.
-            </div>
+              <Button
+                label="Send"
+                severity="secondary"
+                text
+                size="small"
+                :disabled="!ui.planner.advisorIntentDraft.trim()"
+                @click="submitAdvisorIntent"
+              />
+            </section>
           </section>
         </section>
 
@@ -1226,9 +901,9 @@ onMounted(async () => {
 
             <div class="notebook-layout">
               <section class="notebook-todo-panel">
-                <div class="panel-kicker">TODO List</div>
+                <div class="panel-kicker">Notes Queue</div>
                 <div class="notebook-copy">
-                  Mark reports for follow-up when they need synthesis, cross-checking, or a future plan before they belong in your notes.
+                  Mark council notes for follow-up when they need synthesis, cross-checking, or a future plan before they belong in your notes.
                 </div>
 
                 <div v-if="notebookTodoItems.length > 0" class="report-triage-list notebook-todo-list">
@@ -1263,68 +938,7 @@ onMounted(async () => {
                   </article>
                 </div>
                 <div v-else class="map-empty-state reports-empty-state notebook-empty-state">
-                  No follow-up items yet. Flag reports from the queue when they deserve a longer pass in your notes.
-                </div>
-              </section>
-
-              <section class="notebook-strategy-panel">
-                <div class="panel-kicker">Strategy Board</div>
-                <div class="notebook-copy">
-                  Mark systems on the map to teach the council what you care about. Their advice will start disagreeing for useful reasons.
-                </div>
-
-                <div class="strategy-summary-grid">
-                  <div class="operations-summary-card focus">
-                    <strong>{{ strategyBoardSummary.total }}</strong>
-                    <span>Marked systems</span>
-                  </div>
-                  <div class="operations-summary-card">
-                    <strong>{{ strategyBoardSummary.expand }}</strong>
-                    <span>Expansion targets</span>
-                  </div>
-                  <div class="operations-summary-card">
-                    <strong>{{ strategyBoardSummary.threat }}</strong>
-                    <span>Threat flags</span>
-                  </div>
-                  <div class="operations-summary-card">
-                    <strong>{{ strategyBoardSummary.screen }}</strong>
-                    <span>Screen points</span>
-                  </div>
-                </div>
-
-                <div v-if="strategicMarkingRows.length > 0" class="strategy-markings-list">
-                  <article
-                    v-for="row in strategicMarkingRows"
-                    :key="`strategy-${row.systemId}`"
-                    :class="['feed-card', 'feed-card-compact', `feed-tone-${row.severity === 'contrast' ? 'info' : row.severity}`]"
-                  >
-                    <div class="feed-card-top">
-                      <div class="feed-kicker">Marked System</div>
-                      <Tag :severity="row.severity" rounded>{{ row.label }}</Tag>
-                    </div>
-                    <div class="feed-title">{{ row.systemName }}</div>
-                    <p class="feed-copy">{{ row.detail }}</p>
-                  </article>
-                </div>
-                <div v-else class="map-empty-state reports-empty-state notebook-empty-state">
-                  No systems marked yet. Use the focused-system panel on the map to tag expansion, threat, and screening priorities.
-                </div>
-
-                <div class="panel-kicker">Council Readout</div>
-                <div class="advisor-brief-list">
-                  <article
-                    v-for="brief in advisorBriefs"
-                    :key="brief.advisorId"
-                    :class="['feed-card', `feed-tone-${brief.severity === 'contrast' ? 'info' : brief.severity}`]"
-                  >
-                    <div class="feed-card-top">
-                      <div class="feed-kicker">{{ brief.role }}</div>
-                      <Tag :severity="brief.severity" rounded>{{ brief.advisorName }}</Tag>
-                    </div>
-                    <div class="feed-title">{{ brief.headline }}</div>
-                    <p class="feed-copy">{{ brief.summary }}</p>
-                    <p class="feed-impact"><span>Why:</span> {{ brief.reasoning }}</p>
-                  </article>
+                  No follow-up items yet. Flag inbox notes when they deserve a longer pass in your notes.
                 </div>
               </section>
 

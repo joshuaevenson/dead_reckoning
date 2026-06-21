@@ -62,9 +62,57 @@ export type CommanderProfileKind =
   | "napoleonic"
   | "bad_commander";
 
-export type RuntimeAiMode = "off";
+export type FactionProfileFrame =
+  | "house"
+  | "corporation"
+  | "republic"
+  | "cult"
+  | "dynasty"
+  | "league";
+
+export type FactionProfileValue =
+  | "expansion"
+  | "order"
+  | "secrecy"
+  | "commerce"
+  | "discipline"
+  | "prestige"
+  | "survival"
+  | "knowledge";
+
+export type FactionVoiceSeed =
+  | "formal"
+  | "deliberate"
+  | "opportunistic"
+  | "imperious"
+  | "blustering"
+  | "expansionist";
+
+export type DiplomaticIntent = "clarify" | "threaten" | "offer";
+
+export type DiplomaticLeverage = "low" | "balanced" | "high";
+
+export type CandidatePlanKind =
+  | "attack"
+  | "reinforce"
+  | "blockade"
+  | "resupply"
+  | "deploy_probe"
+  | "trade";
+
+export type RuntimeAiMode = "off" | "simulated" | "enabled";
+
+export type RuntimeAiProviderId = "symbolic" | "simulated" | "openai";
+
+export type RuntimeAiProviderStatus =
+  | "inactive"
+  | "simulated"
+  | "available"
+  | "unconfigured";
 
 export type RuntimeCapabilityBaseline = "symbolic" | "scenario_seeded";
+
+export type OverlayPipelineStage = "derive" | "compose" | "enrich" | "validate";
 
 export interface SystemPosition {
   x: number;
@@ -153,6 +201,19 @@ export interface PigeonDispatch {
   recipientFactionId: string;
   packetType: "intel" | "orders" | "diplomatic" | "logistics";
   entries: string[];
+}
+
+export interface FactionProfileVoice {
+  seed: FactionVoiceSeed;
+  style: string;
+  signoff: string;
+}
+
+export interface FactionProfile {
+  frame: FactionProfileFrame;
+  doctrine: string;
+  values: FactionProfileValue[];
+  voice: FactionProfileVoice;
 }
 
 export interface PigeonState {
@@ -352,6 +413,99 @@ export interface FactionDefinition {
   name: string;
   homeSystemId: string;
   commanderProfileId?: string;
+  profile?: FactionProfile;
+}
+
+export interface DiplomaticDirectiveSet {
+  intent: DiplomaticIntent | null;
+  subjectSystemId: string | null;
+  subjectSystemName: string | null;
+  demand: string | null;
+  offer: string | null;
+  message: string | null;
+  notes: string[];
+}
+
+export interface DiplomaticPigeonSchema {
+  id: string;
+  reportId: string;
+  date: string;
+  observedAt: string;
+  packetType: "diplomatic";
+  tone: CouncilTone;
+  intent: DiplomaticIntent;
+  leverage: DiplomaticLeverage;
+  senderFactionId: string;
+  senderFactionName: string;
+  senderProfile: FactionProfile;
+  recipientFactionId: string | null;
+  recipientFactionName: string | null;
+  originSystemId: string | null;
+  originSystemName: string | null;
+  destinationSystemId: string | null;
+  destinationSystemName: string | null;
+  voice: {
+    seed: FactionVoiceSeed;
+    label: string;
+  };
+  directives: DiplomaticDirectiveSet;
+  rendered: {
+    title: string;
+    summary: string;
+    analysis: string;
+    sourceLine: string;
+    message: string;
+  };
+}
+
+export interface CommandCandidatePlan {
+  id: string;
+  kind: CandidatePlanKind;
+  title: string;
+  summary: string;
+  lines: string[];
+  movement: {
+    originSystemId: string | null;
+    originSystemName: string | null;
+    destinationSystemId: string | null;
+    destinationSystemName: string | null;
+    travelDays: number | null;
+    distance: number | null;
+  };
+  cost: {
+    burnSalt: number | null;
+    postLaunchSalt: number | null;
+    probeCostSalt: number | null;
+  };
+  cargoFocus: "salt" | "metals" | null;
+  relay: {
+    title: string;
+    detail: string;
+  } | null;
+  constraints: string[];
+}
+
+export interface RecapEntry {
+  id: string;
+  date: string;
+  kind: "combat" | "control" | "intel" | "diplomacy" | "logistics";
+  title: string;
+  summary: string;
+  consequence: string;
+  followUp: string;
+  evidenceIds: string[];
+}
+
+export interface DoctrineProposal {
+  id: string;
+  date: string;
+  title: string;
+  summary: string;
+  rationale: string;
+  originatingActorId: string;
+  stance: "adopt" | "revise" | "defer";
+  principles: string[];
+  evidenceIds: string[];
 }
 
 export interface CommanderProfileDefinition {
@@ -546,14 +700,29 @@ export interface RuntimeCapabilitySurface {
   label: string;
   baseline: RuntimeCapabilityBaseline;
   summary: string;
+  overlayPipeline?: {
+    entryPoint: string;
+    stages: OverlayPipelineStage[];
+  };
 }
 
 export interface RuntimeCapabilities {
   summary: string;
   ai: {
+    requestedMode: RuntimeAiMode;
     mode: RuntimeAiMode;
     label: string;
     summary: string;
+    provider: {
+      id: RuntimeAiProviderId;
+      label: string;
+      status: RuntimeAiProviderStatus;
+      summary: string;
+    };
+    fallback?: {
+      mode: RuntimeAiMode;
+      reason: string;
+    };
   };
   surfaces: RuntimeCapabilitySurface[];
 }

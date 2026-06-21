@@ -1,3 +1,5 @@
+import { defineOverlayPipeline } from "./overlay-pipeline.js";
+
 const COUNCIL_ACTOR_PROFILES = {
   marshal: {
     id: "marshal",
@@ -514,13 +516,21 @@ function buildSourceLedger(evidenceItems) {
     }));
 }
 
-export function composeCouncilStateFromEvidence(evidenceItems) {
+function deriveCouncilState(evidenceItems) {
+  return (Array.isArray(evidenceItems) ? evidenceItems : []).map((evidence) => ({
+    evidence,
+    takes: takesForEvidence(evidence),
+  }));
+}
+
+function composeCouncilState(derivedEvidenceItems) {
   const actorsById = new Map();
   const beliefs = [];
   const notes = [];
 
-  for (const evidence of evidenceItems) {
-    for (const take of takesForEvidence(evidence)) {
+  for (const item of derivedEvidenceItems) {
+    const { evidence, takes } = item;
+    for (const take of takes) {
       const { actor } = take;
       if (!actorsById.has(actor.id)) {
         actorsById.set(actor.id, actor);
@@ -534,6 +544,36 @@ export function composeCouncilStateFromEvidence(evidenceItems) {
     actors: [...actorsById.values()],
     beliefs,
     notes,
-    sourceLedger: buildSourceLedger(evidenceItems),
+    sourceLedger: buildSourceLedger(derivedEvidenceItems.map((item) => item.evidence)),
   };
+}
+
+function validateCouncilState({ enriched }) {
+  if (!enriched || typeof enriched !== "object") {
+    return false;
+  }
+
+  if (!Array.isArray(enriched.actors) || !Array.isArray(enriched.beliefs) || !Array.isArray(enriched.notes)) {
+    return false;
+  }
+
+  const actorIds = new Set(enriched.actors.map((actor) => actor?.id).filter(Boolean));
+  return enriched.beliefs.every((belief) => actorIds.has(belief?.actorId))
+    && enriched.notes.every((note) => actorIds.has(note?.actorId));
+}
+
+export const councilStateOverlayPipeline = defineOverlayPipeline({
+  featureId: "advisor_desk",
+  derive: deriveCouncilState,
+  compose: composeCouncilState,
+  validate: validateCouncilState,
+});
+
+export async function resolveCouncilStateFromEvidence(evidenceItems, context = {}) {
+  const result = await councilStateOverlayPipeline.run(evidenceItems, context);
+  return result.output;
+}
+
+export function composeCouncilStateFromEvidence(evidenceItems) {
+  return councilStateOverlayPipeline.runSymbolic(evidenceItems).output;
 }

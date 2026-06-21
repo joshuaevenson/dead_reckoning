@@ -3,6 +3,11 @@ import {
   composeCouncilStateFromEvidence,
   getCouncilActorProfile,
 } from "../../src/council.js";
+import {
+  buildCommandCandidatePlan,
+  buildDiplomaticPigeonSchema,
+  normalizeScenarioSymbolicSchemas,
+} from "../../src/symbolic-schemas.js";
 
 const SHIP_MASS = 5;
 const PROBE_COST_SALT = 2;
@@ -38,12 +43,9 @@ const ORDER_ACTIONS = [
 ];
 const WORKSPACE_VIEWS = [
   { key: "reports", label: "Advisors", icon: "pi pi-megaphone" },
-  { key: "map", label: "Map", icon: "pi pi-globe" },
-  { key: "probes", label: "Probes", icon: "pi pi-search" },
-  { key: "operations", label: "Ship Ops", icon: "pi pi-send" },
+  { key: "map", label: "Galaxy", icon: "pi pi-globe" },
   { key: "diplomacy", label: "Diplomacy", icon: "pi pi-users" },
-  { key: "production", label: "Production", icon: "pi pi-sliders-h" },
-  { key: "notebook", label: "Notebook", icon: "pi pi-book" },
+  { key: "notebook", label: "Notes", icon: "pi pi-book" },
 ];
 const PRODUCTION_LINE_FOCUS_OPTIONS = [
   { label: "Build Ships", value: "ships" },
@@ -110,23 +112,32 @@ const STRATEGIC_MARKINGS_BY_VALUE = new Map(
 const ADVISOR_DESK_POLICY = Object.freeze({
   advisorOnly: true,
   mapOwnsWorldIntel: true,
-  showDiplomaticInbox: true,
+  showDiplomaticInbox: false,
   showArchive: true,
   showRawSignals: false,
   showReconSummary: false,
   showFocusedSystem: false,
-  summary: "The advisor desk only carries authored advice, dispatches, and diplomatic messages.",
+  summary:
+    "The advisor desk is a single inbox for commander and advisor notes, with an archive toggle and a standing-orders field for high-level intent.",
   mapGuidance:
-    "Use the galaxy map for ownership, probe coverage, stockpiles, starlanes, and selected-system facts.",
+    "Use the galaxy map for ownership, probe coverage, stockpiles, starlanes, shipyards, builds, and selected-system facts.",
 });
 const DEFAULT_RUNTIME_CAPABILITIES = Object.freeze({
   summary:
-    "The current product runs in an explicit AI-off mode. Advisor notes, reports, diplomacy, opening guidance, and faction identity all resolve through deterministic data, heuristics, and templates.",
+    "The current product runs in an explicit AI-off mode. Advisor notes, reports, diplomacy, opening guidance, and faction identity all resolve through deterministic data, heuristics, and templates, with shared overlay boundaries ready for optional enrichment later.",
   ai: {
+    requestedMode: "off",
     mode: "off",
     label: "AI Off",
     summary:
       "No model calls are required for the current command table. The worker and UI run entirely on deterministic simulation, stored profiles, and symbolic composition.",
+    provider: {
+      id: "symbolic",
+      label: "Symbolic Baseline",
+      status: "inactive",
+      summary:
+        "All current player-facing surfaces resolve through deterministic state, heuristics, and templates only.",
+    },
   },
   surfaces: [
     {
@@ -135,27 +146,35 @@ const DEFAULT_RUNTIME_CAPABILITIES = Object.freeze({
       baseline: "symbolic",
       summary:
         "Council evidence, beliefs, and split advisor takes are derived from simulation reports and role-specific template logic.",
+      overlayPipeline: {
+        entryPoint: "composeCouncilStateFromEvidence",
+        stages: ["derive", "compose", "enrich", "validate"],
+      },
     },
     {
       id: "reports",
       label: "Reports",
       baseline: "symbolic",
       summary:
-        "Morning briefs, council inbox items, source ledgers, and after-action explanations are composed without generated prose.",
+        "Council inbox items, source ledgers, and after-action explanations are composed without generated prose.",
     },
     {
       id: "diplomacy",
       label: "Diplomacy",
       baseline: "symbolic",
       summary:
-        "Delivered pigeons and diplomatic stance boards use commander profiles, leverage rules, and deterministic voice templates.",
+        "Delivered pigeons and diplomatic stance boards use canonical faction profiles, leverage rules, and deterministic voice templates.",
+      overlayPipeline: {
+        entryPoint: "buildDiplomaticPigeonSchema",
+        stages: ["derive", "compose", "enrich", "validate"],
+      },
     },
     {
       id: "identity",
       label: "Faction Identity",
       baseline: "scenario_seeded",
       summary:
-        "Current faction identity comes from scenario-authored faction names and commander profiles rather than runtime text generation.",
+        "Current faction identity comes from scenario-authored faction profiles and symbolic defaults rather than runtime text generation.",
     },
     {
       id: "opening_loop",
@@ -340,6 +359,24 @@ function cloneRuntimeCapabilities(input = DEFAULT_RUNTIME_CAPABILITIES) {
   const surfaces = Array.isArray(source.surfaces) && source.surfaces.length > 0
     ? source.surfaces
     : DEFAULT_RUNTIME_CAPABILITIES.surfaces;
+  const providerSource =
+    aiSource.provider && typeof aiSource.provider === "object"
+      ? aiSource.provider
+      : DEFAULT_RUNTIME_CAPABILITIES.ai.provider;
+  const fallbackSource =
+    aiSource.fallback && typeof aiSource.fallback === "object"
+      ? aiSource.fallback
+      : null;
+  const requestedMode =
+    aiSource.requestedMode === "off" || aiSource.requestedMode === "simulated" || aiSource.requestedMode === "enabled"
+      ? aiSource.requestedMode
+      : aiSource.mode === "off" || aiSource.mode === "simulated" || aiSource.mode === "enabled"
+        ? aiSource.mode
+        : DEFAULT_RUNTIME_CAPABILITIES.ai.requestedMode;
+  const mode =
+    aiSource.mode === "off" || aiSource.mode === "simulated" || aiSource.mode === "enabled"
+      ? aiSource.mode
+      : DEFAULT_RUNTIME_CAPABILITIES.ai.mode;
 
   return {
     summary:
@@ -347,7 +384,8 @@ function cloneRuntimeCapabilities(input = DEFAULT_RUNTIME_CAPABILITIES) {
         ? source.summary
         : DEFAULT_RUNTIME_CAPABILITIES.summary,
     ai: {
-      mode: aiSource.mode === "off" ? "off" : DEFAULT_RUNTIME_CAPABILITIES.ai.mode,
+      requestedMode,
+      mode,
       label:
         typeof aiSource.label === "string"
           ? aiSource.label
@@ -356,6 +394,36 @@ function cloneRuntimeCapabilities(input = DEFAULT_RUNTIME_CAPABILITIES) {
         typeof aiSource.summary === "string"
           ? aiSource.summary
           : DEFAULT_RUNTIME_CAPABILITIES.ai.summary,
+      provider: {
+        id:
+          providerSource.id === "symbolic" || providerSource.id === "simulated" || providerSource.id === "openai"
+            ? providerSource.id
+            : DEFAULT_RUNTIME_CAPABILITIES.ai.provider.id,
+        label:
+          typeof providerSource.label === "string"
+            ? providerSource.label
+            : DEFAULT_RUNTIME_CAPABILITIES.ai.provider.label,
+        status:
+          providerSource.status === "inactive"
+          || providerSource.status === "simulated"
+          || providerSource.status === "available"
+          || providerSource.status === "unconfigured"
+            ? providerSource.status
+            : DEFAULT_RUNTIME_CAPABILITIES.ai.provider.status,
+        summary:
+          typeof providerSource.summary === "string"
+            ? providerSource.summary
+            : DEFAULT_RUNTIME_CAPABILITIES.ai.provider.summary,
+      },
+      fallback:
+        fallbackSource
+        && (fallbackSource.mode === "off" || fallbackSource.mode === "simulated" || fallbackSource.mode === "enabled")
+        && typeof fallbackSource.reason === "string"
+          ? {
+            mode: fallbackSource.mode,
+            reason: fallbackSource.reason,
+          }
+          : undefined,
     },
     surfaces: surfaces.map((surface) => ({
       id:
@@ -374,6 +442,16 @@ function cloneRuntimeCapabilities(input = DEFAULT_RUNTIME_CAPABILITIES) {
         typeof surface?.summary === "string"
           ? surface.summary
           : "",
+      overlayPipeline:
+        Array.isArray(surface?.overlayPipeline?.stages)
+          ? {
+            entryPoint:
+              typeof surface.overlayPipeline.entryPoint === "string"
+                ? surface.overlayPipeline.entryPoint
+                : "",
+            stages: surface.overlayPipeline.stages.filter((stage) => typeof stage === "string"),
+          }
+          : undefined,
     })),
   };
 }
@@ -449,18 +527,48 @@ function advisorProfile(advisorId) {
   };
 }
 
+function councilActorDisplayContext(actorId) {
+  const actor = getCouncilActorProfile(actorId);
+  return {
+    actorId: actor.id,
+    actorKind: actor.kind,
+    actorLabel: actor.label,
+    actorName: actor.name,
+    actorRole: actor.role,
+    advisorId: actor.id,
+    advisorName: actor.name,
+    advisorRole: actor.role,
+  };
+}
+
+function uniqueParagraphs(values) {
+  const lines = [];
+
+  for (const value of values) {
+    const text = String(value ?? "").trim();
+    if (!text || lines.includes(text)) {
+      continue;
+    }
+    lines.push(text);
+  }
+
+  return lines;
+}
+
 function withCouncilDisplayContext(item) {
   const actorProfile = getCouncilActorProfile(item?.actorId ?? item?.advisorId ?? "envoy");
+  const advisorRole = item?.advisorRole ?? item?.actorRole ?? actorProfile.role;
+  const sourceLine = item?.sourceLine ?? null;
   return {
     ...item,
     actorId: item?.actorId ?? item?.advisorId ?? actorProfile.id,
     actorKind: item?.actorKind ?? actorProfile.kind,
     actorLabel: item?.actorLabel ?? actorProfile.label,
     actorName: item?.actorName ?? item?.advisorName ?? actorProfile.name,
-    actorRole: item?.actorRole ?? item?.advisorRole ?? actorProfile.role,
+    actorRole: advisorRole,
     advisorId: item?.advisorId ?? item?.actorId ?? actorProfile.id,
     advisorName: item?.advisorName ?? item?.actorName ?? actorProfile.name,
-    advisorRole: item?.advisorRole ?? item?.actorRole ?? actorProfile.role,
+    advisorRole,
     advisorSource: item?.advisorSource ?? item?.kicker,
     stance: item?.stance ?? "read_the_signal",
     stanceLabel: item?.stanceLabel ?? "Read the signal",
@@ -473,51 +581,16 @@ function withCouncilDisplayContext(item) {
     sourceEvidenceId: item.sourceEvidenceId ?? item.id,
     sourceTitle: item.sourceTitle ?? item.title,
     sourceSummary: item.sourceSummary ?? item.summary,
+    sourceLine,
     strategicCallbacks: item?.strategicCallbacks ?? [],
     strategicPriority: item?.strategicPriority ?? 0,
+    missiveMeta: [advisorRole, sourceLine].filter(Boolean).join(" · "),
+    missiveParagraphs: uniqueParagraphs([
+      item?.summary,
+      item?.analysis,
+      item?.reasoning,
+    ]),
   };
-}
-
-function groupCouncilFeedItems(items) {
-  const groups = [];
-  const groupMap = new Map();
-
-  for (const item of items) {
-    const key = item.sourceEvidenceId ?? item.id;
-    let group = groupMap.get(key);
-
-    if (!group) {
-      group = {
-        id: key,
-        sourceEvidenceId: key,
-        date: item.date,
-        kicker: item.kicker,
-        title: item.sourceTitle ?? item.title,
-        summary: item.sourceSummary ?? item.summary,
-        tone: item.tone,
-        sourceLine: item.sourceLine ?? null,
-        notes: [],
-      };
-      groupMap.set(key, group);
-      groups.push(group);
-    }
-
-    group.notes.push(item);
-  }
-
-  return groups.map((group) => ({
-    ...group,
-    advisorCount: new Set(
-      group.notes
-        .filter((note) => note.actorKind === "advisor")
-        .map((note) => note.actorId),
-    ).size,
-    hasAdvisorDisagreement: new Set(
-      group.notes
-        .filter((note) => note.actorKind === "advisor")
-        .map((note) => note.actorId),
-    ).size > 1,
-  }));
 }
 
 function hasValidPosition(system) {
@@ -525,7 +598,7 @@ function hasValidPosition(system) {
 }
 
 function normalizeScenario(inputScenario) {
-  const scenario = cloneScenario(inputScenario);
+  const scenario = normalizeScenarioSymbolicSchemas(cloneScenario(inputScenario));
   const systems = scenario.systems ?? [];
 
   if (systems.every((system) => hasValidPosition(system))) {
@@ -611,9 +684,25 @@ export function createCommandState(options = {}) {
   const locationSearch =
     options.locationSearch
     ?? (typeof window !== "undefined" ? window.location.search : "");
+  const runtimeAiModeOverride = (() => {
+    const requested = new URLSearchParams(locationSearch).get("ai");
+    return requested === "off" || requested === "simulated" || requested === "enabled"
+      ? requested
+      : null;
+  })();
 
   if (!fetchImpl) {
     throw new Error("createCommandState requires a fetch implementation.");
+  }
+
+  function withRuntimeAiMode(path) {
+    if (!runtimeAiModeOverride) {
+      return path;
+    }
+
+    const url = new URL(path, "https://example.com");
+    url.searchParams.set("ai", runtimeAiModeOverride);
+    return `${url.pathname}${url.search}`;
   }
 
   const api = reactive({
@@ -640,11 +729,14 @@ export function createCommandState(options = {}) {
     seatFactionId: null,
     selectedSystemId: null,
     activeWorkspace: "reports",
+    reportsTab: "inbox",
     activeAction: "attack",
     pendingProbeOrders: {},
     plannerLoadedKey: null,
     planner: {
       speculation: "",
+      advisorIntentDraft: "",
+      advisorOrders: [],
       productionBySystemId: {},
       strategicMarkingsBySystemId: {},
       archivedReportsById: {},
@@ -1312,6 +1404,14 @@ function effectiveMass(ships, cargoSalt, metals) {
       };
     }),
   );
+
+  const selectedSystemProductionRow = computed(() => {
+    if (!selectedSystemFriendly.value) {
+      return null;
+    }
+
+    return productionPlannerRows.value.find((row) => row.systemId === selectedSystemFriendly.value.system.id) ?? null;
+  });
 
   const destinationOptions = computed(() => {
     if (!world.scenario) {
@@ -2106,76 +2206,6 @@ function effectiveMass(ships, cargoSalt, metals) {
     return world.scenario?.factions.find((candidate) => candidate.id === factionId) ?? null;
   }
 
-  function commanderProfileForFaction(factionId) {
-    const faction = factionDefinition(factionId);
-    if (!faction?.commanderProfileId) {
-      return null;
-    }
-
-    return world.scenario?.commanderProfiles?.find((profile) => profile.id === faction.commanderProfileId) ?? null;
-  }
-
-  function parseDispatchEntries(entries) {
-    const directives = {
-      intent: null,
-      subjectSystemId: null,
-      demand: null,
-      offer: null,
-      message: null,
-      notes: [],
-    };
-
-    for (const entry of Array.isArray(entries) ? entries : []) {
-      if (typeof entry !== "string") {
-        continue;
-      }
-
-      const separator = entry.indexOf(":");
-      if (separator === -1) {
-        directives.notes.push(entry.trim());
-        continue;
-      }
-
-      const key = entry.slice(0, separator).trim();
-      const value = entry.slice(separator + 1).trim();
-
-      if (key === "intent") {
-        directives.intent = value || null;
-      } else if (key === "subject") {
-        directives.subjectSystemId = value || null;
-      } else if (key === "demand") {
-        directives.demand = value || null;
-      } else if (key === "offer") {
-        directives.offer = value || null;
-      } else if (key === "message") {
-        directives.message = value || null;
-      } else {
-        directives.notes.push(entry.trim());
-      }
-    }
-
-    return directives;
-  }
-
-  function diplomaticVoiceSeed(factionId) {
-    const profileKind = commanderProfileForFaction(factionId)?.kind ?? null;
-
-    switch (profileKind) {
-      case "turtle":
-        return "deliberate";
-      case "chatty_frontier":
-        return "opportunistic";
-      case "napoleonic":
-        return "imperious";
-      case "bad_commander":
-        return "blustering";
-      case "frontier_expander":
-        return "expansionist";
-      default:
-        return "formal";
-    }
-  }
-
   function senderLeverageAgainstSeat(factionId) {
     const sender = latestSnapshot.value?.factions?.[factionId];
     const seat = currentSeat.value?.snapshot;
@@ -2199,155 +2229,6 @@ function effectiveMass(ships, cargoSalt, metals) {
     return "balanced";
   }
 
-  function normalizeDiplomaticIntent(intent, leverage) {
-    switch (intent) {
-      case "threat":
-      case "threaten":
-      case "ultimatum":
-      case "pressure":
-        return "threaten";
-      case "offer":
-      case "trade":
-      case "conciliate":
-      case "truce":
-        return "offer";
-      case "probe":
-      case "query":
-      case "request":
-        return "probe";
-      default:
-        return leverage === "high" ? "threaten" : "probe";
-    }
-  }
-
-  function diplomaticVoiceLabel(intent, voiceSeed) {
-    if (intent === "threaten") {
-      switch (voiceSeed) {
-        case "deliberate":
-          return "Measured warning";
-        case "opportunistic":
-          return "Opportunistic threat";
-        case "imperious":
-          return "Imperious warning";
-        case "blustering":
-          return "Blustering threat";
-        case "expansionist":
-          return "Expansion warning";
-        default:
-          return "Threatening";
-      }
-    }
-
-    if (intent === "offer") {
-      switch (voiceSeed) {
-        case "opportunistic":
-          return "Transactional offer";
-        case "deliberate":
-          return "Cautious offer";
-        default:
-          return "Conciliatory";
-      }
-    }
-
-    switch (voiceSeed) {
-      case "deliberate":
-        return "Measured signal";
-      case "opportunistic":
-        return "Probing signal";
-      default:
-        return "Diplomatic signal";
-    }
-  }
-
-  function diplomaticItemTone(intent, leverage) {
-    if (intent === "threaten") {
-      return leverage === "high" ? "danger" : "warn";
-    }
-
-    if (intent === "offer") {
-      return "secondary";
-    }
-
-    return "info";
-  }
-
-  function renderDiplomaticMessage(senderFactionId, directives, intent, voiceSeed, leverage) {
-    if (directives.message) {
-      return directives.message;
-    }
-
-    const subjectName = directives.subjectSystemId
-      ? translateSystemId(directives.subjectSystemId)
-      : "the frontier";
-    const demandText = directives.demand ?? `keep clear of ${subjectName}`;
-    const offerText = directives.offer ?? `trade information instead of racing blind into ${subjectName}`;
-
-    if (intent === "threaten") {
-      switch (voiceSeed) {
-        case "deliberate":
-          return leverage === "high"
-            ? `We advise restraint around ${subjectName}. ${demandText}, and this exchange can remain a message instead of a campaign.`
-            : `We would prefer calm around ${subjectName}, but continued pressure there will be answered in kind.`;
-        case "opportunistic":
-          return leverage === "high"
-            ? `The lane around ${subjectName} is narrowing. ${demandText} before we settle the question with ships.`
-            : `There is still time to step away from ${subjectName} before this frontier becomes expensive for both of us.`;
-        case "imperious":
-          return `Consider ${subjectName} spoken for. ${demandText}, and spare both courts the formalities of escalation.`;
-        case "blustering":
-          return `Back away from ${subjectName} now. Ignore this and we will answer with a heavier hand than you expect.`;
-        case "expansionist":
-          return `We are already moving on ${subjectName}. ${demandText} if you would rather meet our timetable by pigeon than by fleet.`;
-        default:
-          return `Leave ${subjectName} alone and we may avoid a larger contest.`;
-      }
-    }
-
-    if (intent === "offer") {
-      switch (voiceSeed) {
-        case "opportunistic":
-          return `A quiet frontier is still cheaper than a loud one. We can ${offerText} if you prefer leverage to remain indirect.`;
-        case "deliberate":
-          return `We would prefer order over waste. ${offerText}, and let distance do the cooling for us.`;
-        default:
-          return `There is still room to keep this limited. We can ${offerText}.`;
-      }
-    }
-
-    switch (voiceSeed) {
-      case "deliberate":
-        return `We are watching ${subjectName} closely and would prefer to understand your intent before the frontier hardens.`;
-      case "opportunistic":
-        return `Before either side commits too much around ${subjectName}, tell us whether you are shaping a claim or merely screening it.`;
-      default:
-        return `${factionDefinition(senderFactionId)?.name ?? translateFactionId(senderFactionId)} is seeking clarity about ${subjectName}.`;
-    }
-  }
-
-  function renderDiplomaticImplication(senderFactionId, intent, leverage) {
-    const senderName = translateFactionId(senderFactionId);
-
-    if (intent === "threaten") {
-      if (leverage === "high") {
-        return `Envoy Tal reads this as pressure from strength. ${senderName} thinks distance and force let them set the terms unless we answer quickly.`;
-      }
-
-      if (leverage === "low") {
-        return `Envoy Tal reads this as a testing threat. Even if the bluff is thin, it marks where ${senderName} wants our attention pinned.`;
-      }
-
-      return `Envoy Tal reads this as a probe of resolve. ${senderName} is trying to move our reserve by pigeon before ships have to do the work.`;
-    }
-
-    if (intent === "offer") {
-      return leverage === "high"
-        ? `Envoy Tal reads this as terms offered from advantage. The deal matters less than what ${senderName} thinks we are too pressed to refuse.`
-        : `Envoy Tal reads this as an information play. Even a soft offer can reveal what ${senderName} wants us to stop watching.`;
-    }
-
-    return `Envoy Tal treats this as reconnaissance by conversation. The wording matters, but the real signal is which system ${senderName} chose to make legible.`;
-  }
-
   function buildDiplomaticDispatchItem(report) {
     const packetType = typeof report?.content?.packetType === "string" ? report.content.packetType : null;
     const senderFactionId = typeof report?.content?.senderFactionId === "string" ? report.content.senderFactionId : null;
@@ -2355,37 +2236,50 @@ function effectiveMass(ships, cargoSalt, metals) {
       return null;
     }
 
-    const directives = parseDispatchEntries(report.content.entries);
-    const leverage = senderLeverageAgainstSeat(senderFactionId);
-    const intent = normalizeDiplomaticIntent(directives.intent, leverage);
-    const voiceSeed = diplomaticVoiceSeed(senderFactionId);
-    const voiceLabel = diplomaticVoiceLabel(intent, voiceSeed);
-    const tone = diplomaticItemTone(intent, leverage);
-    const destinationSystemId =
-      typeof report.content.destinationSystemId === "string"
-        ? report.content.destinationSystemId
-        : currentSeat.value?.faction.homeSystemId;
-    const originName = report.sourceSystemId ? translateSystemId(report.sourceSystemId) : "unknown origin";
-    const destinationName = destinationSystemId ? translateSystemId(destinationSystemId) : "unknown destination";
-    const message = renderDiplomaticMessage(senderFactionId, directives, intent, voiceSeed, leverage);
+    const senderFaction = factionDefinition(senderFactionId);
+    const recipientFaction = currentSeat.value?.faction ?? null;
+    if (!senderFaction) {
+      return null;
+    }
+
+    const schema = buildDiplomaticPigeonSchema({
+      report: {
+        ...report,
+        content: {
+          ...report.content,
+          destinationSystemId:
+            typeof report.content.destinationSystemId === "string"
+              ? report.content.destinationSystemId
+              : currentSeat.value?.faction.homeSystemId ?? null,
+        },
+      },
+      senderFaction,
+      recipientFaction,
+      leverage: senderLeverageAgainstSeat(senderFactionId),
+      getSystemName: translateSystemId,
+    });
+    if (!schema) {
+      return null;
+    }
 
     return {
       id: `dispatch:${report.id}`,
-      date: report.availableDate,
+      date: schema.date,
       eventType: "diplomatic_pigeon",
       kicker: "Diplomatic pigeon",
-      title: `${translateFactionId(senderFactionId)} sent a ${voiceLabel.toLowerCase()} pigeon`,
-      summary: `Delivered from ${originName} to ${destinationName}. ${message}`,
-      analysis: renderDiplomaticImplication(senderFactionId, intent, leverage),
-      tone,
+      title: schema.rendered.title,
+      summary: schema.rendered.summary,
+      analysis: schema.rendered.analysis,
+      tone: schema.tone,
       advisorId: "envoy",
       advisorName: advisorProfile("envoy").advisorName,
       advisorRole: advisorProfile("envoy").role,
       advisorSource: "Diplomatic signal",
-      sourceLine: `${translateFactionId(senderFactionId)} · ${voiceLabel}`,
+      sourceLine: schema.rendered.sourceLine,
       senderFactionId,
-      voiceLabel,
+      voiceLabel: schema.voice.label,
       friendlySource: false,
+      schema,
     };
   }
 
@@ -3078,14 +2972,18 @@ function effectiveMass(ships, cargoSalt, metals) {
   const councilActors = computed(() => councilState.value.actors);
   const councilBeliefs = computed(() => councilState.value.beliefs);
 
-  const feedItems = computed(() =>
-    councilState.value.notes
+  const feedItems = computed(() => {
+    const morningBriefItems = buildMorningBriefItems(buildDailyBriefData())
+      .filter((item) => !processedReportIds.value.has(item.id));
+    const councilNotes = councilState.value.notes
       .filter((item) => !processedReportIds.value.has(item.id))
-      .map((item) => withCouncilDisplayContext(item))
-      .slice(0, 12),
-  );
+      .map((item) => withCouncilDisplayContext(item));
 
-  const feedGroups = computed(() => groupCouncilFeedItems(feedItems.value));
+    return sortReportsByDate([
+      ...morningBriefItems,
+      ...councilNotes,
+    ]).slice(0, 15);
+  });
 
   const sourceLedgerItems = computed(() => councilState.value.sourceLedger.slice(0, 10));
 
@@ -3099,141 +2997,123 @@ function effectiveMass(ships, cargoSalt, metals) {
       .map((item) => withCouncilDisplayContext(item)),
   );
 
-  const orderBrief = computed(() => {
+  const advisorOrderItems = computed(() =>
+    [...(ui.planner.advisorOrders ?? [])].sort((left, right) =>
+      String(right.submittedAt ?? "").localeCompare(String(left.submittedAt ?? ""))
+      || String(right.id ?? "").localeCompare(String(left.id ?? "")),
+    ),
+  );
+
+  const commandCandidatePlan = computed(() => {
     if (!currentSeat.value) {
       return {
+        id: "seat:pending",
+        kind: ui.activeAction,
         title: "Orders Await Context",
+        summary: "Choose a faction seat before issuing orders.",
         lines: ["Choose a faction seat before issuing orders."],
+        movement: {
+          originSystemId: null,
+          originSystemName: null,
+          destinationSystemId: null,
+          destinationSystemName: null,
+          travelDays: null,
+          distance: null,
+        },
+        cost: {
+          burnSalt: null,
+          postLaunchSalt: null,
+          probeCostSalt: null,
+        },
+        cargoFocus: null,
+        relay: null,
+        constraints: ["seat_required"],
       };
     }
 
     const destinationId = ui.orderDraft.destinationId ?? destinationOptions.value[0]?.value ?? null;
-    const destinationName = destinationId ? translateSystemId(destinationId) : "No destination";
-    const relayLine = commandRelay.value ? `${commandRelay.value.title}: ${commandRelay.value.detail}` : null;
 
     if (ui.activeAction === "attack" || ui.activeAction === "reinforce" || ui.activeAction === "blockade") {
       const origin = activeFleetOrigin.value;
-      if (!origin) {
-        return {
-          title: "Choose An Origin",
-          lines: ["Use the Origin field to choose a friendly system before launching ships."],
-        };
-      }
-
-      const plan = destinationId ? routePlan(origin.system.id, destinationId) : null;
+      const plan = origin && destinationId ? routePlan(origin.system.id, destinationId) : null;
       const ships = Number(ui.orderDraft.ships || 1);
       const burn = plan ? requiredBurnSalt(ships, 0, 0, plan.distance) : null;
-      const title =
-        ui.activeAction === "attack"
-          ? "Attack Order"
-          : ui.activeAction === "reinforce"
-            ? "Reinforcement Order"
-            : "Blockade Order";
-      const intentLine =
-        ui.activeAction === "attack"
-          ? "Intent: force a fight and pressure local control."
-          : ui.activeAction === "reinforce"
-            ? "Intent: strengthen a friendly position before contact."
-            : "Intent: hold a strategic waypoint and threaten passing starlane traffic.";
-      return {
-        title,
-        lines: [
-          `${ships} ships toward ${destinationName}`,
-          intentLine,
-          `Transit estimate: ${plan ? formatTravelSpan(plan.travelDays) : "No route"}`,
-          `Projected burn cost: ${burn !== null ? `${burn} salt` : "Route required"}`,
-          burn !== null
-            ? `Post-launch local salt: ${Math.max(0, origin.snapshot.saltStockpile - burn)}`
-            : "Post-launch local salt: unresolved until a route exists.",
-          ui.activeAction === "blockade"
-            ? "Blockading fleets can trigger interception penalties against enemies using adjacent starlanes."
-            : null,
-          relayLine,
-        ].filter(Boolean),
-      };
+      return buildCommandCandidatePlan({
+        kind: ui.activeAction,
+        originSystemId: origin?.system.id ?? null,
+        originSystemName: origin?.system.name ?? null,
+        destinationSystemId: destinationId,
+        destinationSystemName: destinationId ? translateSystemId(destinationId) : null,
+        ships,
+        plan,
+        burnSalt: burn,
+        postLaunchSalt: burn !== null && origin ? origin.snapshot.saltStockpile - burn : null,
+        relay: commandRelay.value,
+        formatTravelSpan,
+        titleCase,
+      });
     }
 
     if (ui.activeAction === "resupply") {
       const origin = activeFleetOrigin.value;
-      if (!origin) {
-        return {
-          title: "Choose An Origin",
-          lines: ["Use the Origin field to choose a friendly system before sending supplies."],
-        };
-      }
-
-      const plan = destinationId ? routePlan(origin.system.id, destinationId) : null;
+      const plan = origin && destinationId ? routePlan(origin.system.id, destinationId) : null;
       const ships = Number(ui.orderDraft.ships || 1);
       const burn = plan ? requiredBurnSalt(ships, 0, 0, plan.distance) : null;
-      return {
-        title: "Resupply Order",
-        lines: [
-          `${ships} ships escort supplies toward ${destinationName}`,
-          `Cargo priority: ${titleCase(ui.orderDraft.resupplyFocus)}`,
-          `Transit estimate: ${plan ? formatTravelSpan(plan.travelDays) : "No route"}`,
-          `Escort burn cost: ${burn !== null ? `${burn} salt` : "Route required"}`,
-          "Supply mass will expand in a later draft; this preview prices the escort first.",
-          relayLine,
-        ].filter(Boolean),
-      };
+      return buildCommandCandidatePlan({
+        kind: "resupply",
+        originSystemId: origin?.system.id ?? null,
+        originSystemName: origin?.system.name ?? null,
+        destinationSystemId: destinationId,
+        destinationSystemName: destinationId ? translateSystemId(destinationId) : null,
+        ships,
+        cargoFocus: ui.orderDraft.resupplyFocus,
+        plan,
+        burnSalt: burn,
+        relay: commandRelay.value,
+        formatTravelSpan,
+        titleCase,
+      });
     }
 
     if (ui.activeAction === "deploy_probe") {
       const anchorId = ui.orderDraft.anchorId ?? selectedSystem.value?.system.id ?? anchorOptions.value[0]?.value ?? null;
-      if (!anchorId) {
-        return {
-          title: "Choose A Probe Target",
-          lines: ["Select an anchor system before dispatching reconnaissance."],
-        };
-      }
-
       const originSystemId = ui.orderDraft.probeOriginId ?? null;
-      if (!originSystemId) {
-        return {
-          title: "Choose An Origin",
-          lines: ["Select a friendly origin with salt and a ready probe to launch reconnaissance."],
-        };
-      }
-
-      const anchorPlan = routePlan(originSystemId, anchorId);
-      const probeStatus = probeStatusForSystem(anchorId);
-      return {
-        title: "Probe Mission",
-        lines: [
-          `Target: ${translateSystemId(anchorId)}`,
-          `Origin: ${translateSystemId(originSystemId)}`,
-          `Estimated arrival: ${formatTravelSpan(anchorPlan?.travelDays ?? 0)}`,
-          `Cost: ${PROBE_COST_SALT} salt`,
-          "Requires: 1 ready probe in origin stores",
-          "Dispatch from this dock to launch the probe immediately.",
-          probeStatus.status === "in_transit"
-            ? probeStatus.label
-            : "Probes narrow uncertainty around approach lanes and turns.",
-          relayLine,
-        ].filter(Boolean),
-      };
+      const anchorPlan = originSystemId && anchorId ? routePlan(originSystemId, anchorId) : null;
+      return buildCommandCandidatePlan({
+        kind: "deploy_probe",
+        originSystemId,
+        originSystemName: originSystemId ? translateSystemId(originSystemId) : null,
+        destinationSystemId: anchorId,
+        destinationSystemName: anchorId ? translateSystemId(anchorId) : null,
+        plan: anchorPlan,
+        probeCostSalt: PROBE_COST_SALT,
+        probeStatus: anchorId ? probeStatusForSystem(anchorId) : null,
+        relay: commandRelay.value,
+        formatTravelSpan,
+        titleCase,
+      });
     }
 
     const origin = activeFleetOrigin.value;
-    if (!origin) {
-      return {
-        title: "Choose An Origin",
-        lines: ["Use the Origin field to choose a friendly system before assigning trade."],
-      };
-    }
-
-    const plan = destinationId ? routePlan(origin.system.id, destinationId) : null;
-    return {
-      title: "Trade Run",
-      lines: [
-        `${origin.system.name} to ${destinationName}`,
-        `Cargo priority: ${titleCase(ui.orderDraft.tradeFocus)}`,
-        `Transit estimate: ${plan ? formatTravelSpan(plan.travelDays) : "No route"}`,
-        `Local production: ${saltOutputForSystem(origin.system)} salt / ${METAL_OUTPUT[origin.system.metalRichness]} metals per year`,
-        relayLine,
-      ].filter(Boolean),
-    };
+    const plan = origin && destinationId ? routePlan(origin.system.id, destinationId) : null;
+    return buildCommandCandidatePlan({
+      kind: "trade",
+      originSystemId: origin?.system.id ?? null,
+      originSystemName: origin?.system.name ?? null,
+      destinationSystemId: destinationId,
+      destinationSystemName: destinationId ? translateSystemId(destinationId) : null,
+      cargoFocus: ui.orderDraft.tradeFocus,
+      plan,
+      relay: commandRelay.value,
+      formatTravelSpan,
+      titleCase,
+      localProduction: origin
+        ? `${saltOutputForSystem(origin.system)} salt / ${METAL_OUTPUT[origin.system.metalRichness]} metals per year`
+        : null,
+    });
   });
+
+  const orderBrief = computed(() => commandCandidatePlan.value);
 
   const orderSubmission = computed(() => {
     if (api.submitting) {
@@ -3355,6 +3235,8 @@ function effectiveMass(ships, cargoSalt, metals) {
       if (!key) {
         ui.plannerLoadedKey = null;
         ui.planner.speculation = "";
+        ui.planner.advisorIntentDraft = "";
+        ui.planner.advisorOrders = [];
         ui.planner.productionBySystemId = {};
         ui.planner.strategicMarkingsBySystemId = {};
         ui.planner.archivedReportsById = {};
@@ -3374,6 +3256,10 @@ function effectiveMass(ships, cargoSalt, metals) {
 
       ui.plannerLoadedKey = key;
       ui.planner.speculation = typeof nextState?.speculation === "string" ? nextState.speculation : "";
+      ui.planner.advisorIntentDraft =
+        typeof nextState?.advisorIntentDraft === "string" ? nextState.advisorIntentDraft : "";
+      ui.planner.advisorOrders =
+        Array.isArray(nextState?.advisorOrders) ? nextState.advisorOrders : [];
       ui.planner.productionBySystemId =
         nextState?.productionBySystemId && typeof nextState.productionBySystemId === "object"
           ? nextState.productionBySystemId
@@ -3397,6 +3283,8 @@ function effectiveMass(ships, cargoSalt, metals) {
   watch(
     () => plannerStorageKey.value ? JSON.stringify({
       speculation: ui.planner.speculation,
+      advisorIntentDraft: ui.planner.advisorIntentDraft,
+      advisorOrders: ui.planner.advisorOrders,
       productionBySystemId: ui.planner.productionBySystemId,
       strategicMarkingsBySystemId: ui.planner.strategicMarkingsBySystemId,
       archivedReportsById: ui.planner.archivedReportsById,
@@ -3525,13 +3413,13 @@ function effectiveMass(ships, cargoSalt, metals) {
   }
 
   async function loadScenario(id) {
-    const response = await fetchImpl(`/api/scenarios/${encodeURIComponent(id)}`);
+    const response = await fetchImpl(withRuntimeAiMode(`/api/scenarios/${encodeURIComponent(id)}`));
     if (!response.ok) {
       throw new Error(`Unable to load scenario ${id}`);
     }
     const loadedScenario = await response.json();
 
-    const simulationResponse = await fetchImpl("/api/simulate", {
+    const simulationResponse = await fetchImpl(withRuntimeAiMode("/api/simulate"), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(loadedScenario),
@@ -3557,7 +3445,7 @@ function effectiveMass(ships, cargoSalt, metals) {
 
   async function loadInitialData() {
     try {
-      const health = await fetchImpl("/api/health");
+      const health = await fetchImpl(withRuntimeAiMode("/api/health"));
       if (!health.ok) {
         throw new Error("health check failed");
       }
@@ -3566,7 +3454,7 @@ function effectiveMass(ships, cargoSalt, metals) {
         healthPayload.runtimeCapabilities ?? runtime.capabilities,
       );
 
-      const response = await fetchImpl("/api/scenarios");
+      const response = await fetchImpl(withRuntimeAiMode("/api/scenarios"));
       if (!response.ok) {
         throw new Error("scenario list failed");
       }
@@ -3585,7 +3473,7 @@ function effectiveMass(ships, cargoSalt, metals) {
   }
 
   async function simulateWorkingScenario(nextScenario) {
-    const simulationResponse = await fetchImpl("/api/simulate", {
+    const simulationResponse = await fetchImpl(withRuntimeAiMode("/api/simulate"), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(nextScenario),
@@ -3597,7 +3485,7 @@ function effectiveMass(ships, cargoSalt, metals) {
     }
 
     const simulationPayload = await simulationResponse.json();
-    world.scenario = nextScenario;
+    world.scenario = normalizeScenario(nextScenario);
     world.result = simulationPayload;
     runtime.capabilities = cloneRuntimeCapabilities(
       simulationPayload.runtimeCapabilities ?? runtime.capabilities,
@@ -3770,7 +3658,7 @@ function effectiveMass(ships, cargoSalt, metals) {
       targetSystemId,
       () => {
         recordPendingProbeOrder(origin.systemId, targetSystemId);
-        ui.activeWorkspace = "probes";
+        ui.activeWorkspace = "map";
       },
     );
   }
@@ -3800,7 +3688,7 @@ function effectiveMass(ships, cargoSalt, metals) {
         anchorSystemId,
         () => {
           recordPendingProbeOrder(originSystemId, anchorSystemId);
-          ui.activeWorkspace = "probes";
+          ui.activeWorkspace = "map";
         },
       );
       return;
@@ -3839,6 +3727,10 @@ function effectiveMass(ships, cargoSalt, metals) {
 
   function setActiveWorkspace(workspaceKey) {
     ui.activeWorkspace = workspaceKey;
+  }
+
+  function setReportsTab(tab) {
+    ui.reportsTab = tab === "archive" ? "archive" : "inbox";
   }
 
   function prepareProbeForSystem(targetSystemId = selectedSystem.value?.system.id) {
@@ -4484,7 +4376,120 @@ function effectiveMass(ships, cargoSalt, metals) {
     return briefs.slice(0, 4);
   });
 
-  const dailyBrief = computed(() => {
+  const selectedSystemAdvisorBriefs = computed(() => {
+    const system = selectedSystem.value?.system ?? null;
+    const marking = selectedSystemMarking.value;
+    const overview = selectedSystemOverview.value;
+    if (!system || !overview) {
+      return [];
+    }
+
+    const matchingBriefs = advisorBriefs.value.filter((brief) =>
+      [brief.headline, brief.summary, brief.reasoning].some((text) =>
+        typeof text === "string" && text.includes(system.name),
+      ),
+    );
+    if (matchingBriefs.length > 0) {
+      return matchingBriefs.slice(0, 3);
+    }
+
+    if (!marking) {
+      return [];
+    }
+
+    const probeCovered =
+      overview.probeStatus?.status === "on_station"
+      || overview.probeStatus?.status === "friendly_control";
+
+    switch (marking.value) {
+      case "threat":
+        return [
+          {
+            advisorId: "marshal-local",
+            advisorName: "Marshal Ilyan",
+            role: "Campaigns",
+            severity: "danger",
+            headline: `${system.name} stays dangerous if we strip the reserve`,
+            summary: `The threat mark tells command to hold a real answer for ${system.name} instead of assuming we can improvise later.`,
+            reasoning: "Threat markings are promises about where we expect tempo pressure to punish a thin frontier.",
+          },
+          probeCovered
+            ? {
+              advisorId: "spymaster-local",
+              advisorName: "Spymaster Vey",
+              role: "Reconnaissance",
+              severity: "success",
+              headline: `${system.name} is watched closely enough to trust`,
+              summary: `We already have direct local visibility there, so warnings about ${system.name} can rely on facts instead of guesses.`,
+              reasoning: "A marked threat is far more useful once the probe net turns that suspicion into current local truth.",
+            }
+            : {
+              advisorId: "spymaster-local",
+              advisorName: "Spymaster Vey",
+              role: "Reconnaissance",
+              severity: "info",
+              headline: `Marking ${system.name} as a threat raises the price of blindness`,
+              summary: `The council will keep asking for reconnaissance until we can see the local ships, stores, and defenses there directly.`,
+              reasoning: "Threat markings matter because they tell us where missing information is most expensive.",
+            },
+        ];
+      case "expand":
+      case "explore":
+        return [
+          {
+            advisorId: "steward-local",
+            advisorName: "Steward Sen",
+            role: "Logistics",
+            severity: marking.value === "expand" ? "success" : "secondary",
+            headline: `${system.name} is now part of the growth plan`,
+            summary: `Because you marked ${system.name}, the council treats it as a candidate for near-term expansion timing rather than background scenery.`,
+            reasoning: "Markings convert a star on the map into a destination that logistics and fleet planning can actively support.",
+          },
+          {
+            advisorId: "recon-local",
+            advisorName: "Spymaster Vey",
+            role: "Reconnaissance",
+            severity: probeCovered ? "success" : "info",
+            headline: probeCovered
+              ? `${system.name} can be planned from a known picture`
+              : `${system.name} still needs a cleaner picture`,
+            summary: probeCovered
+              ? "Exact local conditions are already visible, so the next debate is about timing and force, not uncertainty."
+              : "Until a probe settles or we take the system, every plan here is carrying some avoidable uncertainty.",
+            reasoning: "Expansion plans get better when we narrow the number of plausible enemy answers before we commit.",
+          },
+        ];
+      case "screen":
+        return [
+          {
+            advisorId: "spymaster-local",
+            advisorName: "Spymaster Vey",
+            role: "Reconnaissance",
+            severity: "warn",
+            headline: `${system.name} is a warning-time anchor`,
+            summary: "The screen mark tells advisors and commanders that this approach matters most as an early-warning lane, not just as territory.",
+            reasoning: "Screen points buy time. Time is what keeps one hostile burn from creating three simultaneous panic responses.",
+          },
+        ];
+      case "economic_priority":
+      case "future_link":
+        return [
+          {
+            advisorId: "steward-local",
+            advisorName: "Steward Sen",
+            role: "Logistics",
+            severity: "secondary",
+            headline: `${system.name} now shapes the long game`,
+            summary: `Because ${system.name} is marked ${marking.label.toLowerCase()}, the council weighs shipping discipline and infrastructure here more heavily in future advice.`,
+            reasoning: "Economic and route-hinge markings change which systems are worth protecting before the crisis is obvious.",
+          },
+        ];
+      default:
+        return [];
+    }
+  });
+
+  function buildDailyBriefData() {
     if (!currentSeat.value || !world.scenario) {
       return null;
     }
@@ -4499,16 +4504,6 @@ function effectiveMass(ships, cargoSalt, metals) {
     const screenTarget = strategicMarkingRows.value.find((row) => row.value === "screen") ?? null;
     const strongestThreat = diplomacySummary.value.strongestThreat;
     const actionableProbeDepot = probeCommandRows.value.find((row) => row.launchCapable) ?? null;
-    const lessonSource =
-      feedItems.value.find((item) =>
-        item.kicker === "Battle report"
-        || item.kicker === "Incoming threat"
-        || item.kicker === "Blockade burn"
-        || item.kicker === "Control shift"
-        || item.kicker === "Recon on station",
-      )
-      ?? feedItems.value[0]
-      ?? null;
 
     let opportunity = {
       key: "opportunity",
@@ -4517,9 +4512,8 @@ function effectiveMass(ships, cargoSalt, metals) {
       title: "Build the next edge deliberately",
       summary: "Use reconnaissance, trade, and the frontier to create the next decision before a rival creates one for you.",
       source: "General command guidance",
-      advisorId: "steward",
-      advisorName: advisorProfile("steward").advisorName,
-      advisorRole: advisorProfile("steward").role,
+      reasoning: "The first good opening usually belongs to the side that shaped the board before the crisis became obvious.",
+      ...councilActorDisplayContext("steward"),
     };
 
     if (expandTarget) {
@@ -4537,9 +4531,11 @@ function effectiveMass(ships, cargoSalt, metals) {
             ? `${expandTarget.detail} We already have the local picture, so timing now matters more than certainty.`
             : `${expandTarget.detail} A probe there would collapse uncertainty before the claim or convoy commits.`,
         source: "Strategy board",
-        advisorId: expandTarget.value === "explore" ? "spymaster" : "steward",
-        advisorName: advisorProfile(expandTarget.value === "explore" ? "spymaster" : "steward").advisorName,
-        advisorRole: advisorProfile(expandTarget.value === "explore" ? "spymaster" : "steward").role,
+        reasoning:
+          probeStatus.status === "on_station" || probeStatus.status === "friendly_control"
+            ? "Once we already own the local picture, speed matters more than another round of hesitation."
+            : "A marked opportunity deserves less guessing and more deliberate warning time.",
+        ...councilActorDisplayContext(expandTarget.value === "explore" ? "spymaster" : "steward"),
       };
     } else if (actionableProbeDepot) {
       opportunity = {
@@ -4549,9 +4545,8 @@ function effectiveMass(ships, cargoSalt, metals) {
         title: `${actionableProbeDepot.systemName} can widen the picture today`,
         summary: `${actionableProbeDepot.readyProbes} ready probes and ${formatNumber(actionableProbeDepot.saltStockpile)} salt are waiting there. Turn spare stores into warning time.`,
         source: "Probe net",
-        advisorId: "spymaster",
-        advisorName: advisorProfile("spymaster").advisorName,
-        advisorRole: advisorProfile("spymaster").role,
+        reasoning: "Idle probes are unused lead time. Use them before the board forces a blinder decision.",
+        ...councilActorDisplayContext("spymaster"),
       };
     }
 
@@ -4562,9 +4557,8 @@ function effectiveMass(ships, cargoSalt, metals) {
       title: "The board is quiet, but not safe",
       summary: "Use the diplomacy table and probe coverage to decide where silence is genuine and where it hides a commitment in transit.",
       source: "Situation estimate",
-      advisorId: "envoy",
-      advisorName: advisorProfile("envoy").advisorName,
-      advisorRole: advisorProfile("envoy").role,
+      reasoning: "Silence becomes dangerous when we treat it like certainty instead of missing information.",
+      ...councilActorDisplayContext("envoy"),
     };
 
     if (threatTarget) {
@@ -4575,9 +4569,8 @@ function effectiveMass(ships, cargoSalt, metals) {
         title: `${threatTarget.systemName} is the pressure point`,
         summary: `${threatTarget.detail} If we strip the wrong reserve, this is where a pin, blockade, or surprise arrival will punish us.`,
         source: "Strategy board",
-        advisorId: "marshal",
-        advisorName: advisorProfile("marshal").advisorName,
-        advisorRole: advisorProfile("marshal").role,
+        reasoning: "Pressure points punish the side that reacts late and from the wrong reserve.",
+        ...councilActorDisplayContext("marshal"),
       };
     } else if (strongestThreat) {
       threat = {
@@ -4587,9 +4580,8 @@ function effectiveMass(ships, cargoSalt, metals) {
         title: `${strongestThreat.factionName} is setting the current risk`,
         summary: `${strongestThreat.stanceSummary} ${strongestThreat.latestSignalText}`,
         source: "Diplomacy board",
-        advisorId: "envoy",
-        advisorName: advisorProfile("envoy").advisorName,
-        advisorRole: advisorProfile("envoy").role,
+        reasoning: "The sharpest rival signal should shape our read of tempo until a harder fact replaces it.",
+        ...councilActorDisplayContext("envoy"),
       };
     } else if (screenTarget) {
       threat = {
@@ -4599,56 +4591,110 @@ function effectiveMass(ships, cargoSalt, metals) {
         title: `${screenTarget.systemName} could blindside the lane`,
         summary: `${screenTarget.detail} If that screen point goes unwatched, we give away reaction time for free.`,
         source: "Strategy board",
-        advisorId: "marshal",
-        advisorName: advisorProfile("marshal").advisorName,
-        advisorRole: advisorProfile("marshal").role,
+        reasoning: "Warning time is often the difference between a manageable burn and a forced scramble.",
+        ...councilActorDisplayContext("marshal"),
       };
     }
 
-    let lesson = {
-      key: "lesson",
-      label: "Lesson",
+    let command = {
+      key: "command",
+      label: "Command",
       severity: "secondary",
-      title: "Interpretation wins more than volume",
-      summary: "The point of the daily queue is not to read everything. It is to notice which piece of information changes the plan.",
-      source: "Command doctrine",
-      advisorId: "envoy",
-      advisorName: advisorProfile("envoy").advisorName,
-      advisorRole: advisorProfile("envoy").role,
+      title: "Keep one answer in hand",
+      summary: "Field command should start the day with one reserve or route that can answer the first surprise cleanly.",
+      source: "Field command",
+      reasoning: "The first response is usually worth more than the perfect response that arrives one move late.",
+      ...councilActorDisplayContext("line_command"),
     };
 
-    if (lessonSource) {
-      lesson = {
-        key: "lesson",
-        label: "Lesson",
-        severity: lessonSource.tone === "danger" ? "warn" : lessonSource.tone,
-        title: `Lesson from ${lessonSource.kicker.toLowerCase()}`,
-        summary: lessonSource.analysis,
-        source: lessonSource.title,
-        advisorId: lessonSource.advisorId ?? advisorProfile("envoy").advisorId,
-        advisorName: lessonSource.advisorName ?? advisorProfile("envoy").advisorName,
-        advisorRole: lessonSource.advisorRole ?? advisorProfile("envoy").role,
+    if (threatTarget || strongestThreat?.stanceKey === "hostile") {
+      const threatName = threatTarget?.systemName ?? strongestThreat?.factionName ?? "the frontier";
+      command = {
+        key: "command",
+        label: "Command",
+        severity: "warn",
+        title: `Hold a reserve aimed at ${threatName}`,
+        summary: `Commodore Vale wants the first answer positioned where it can blunt a sudden burn, blockade, or raid without stripping every lane.`,
+        source: "Field command",
+        reasoning: "Once the enemy chooses the tempo, a badly placed reserve is almost the same as no reserve.",
+        ...councilActorDisplayContext("line_command"),
       };
-    } else if (advisorBriefs.value.length > 0) {
-      const advisor = advisorBriefs.value[0];
-      lesson = {
-        key: "lesson",
-        label: "Lesson",
-        severity: advisor.severity === "danger" ? "warn" : advisor.severity,
-        title: `${advisor.advisorName} is teaching a bias`,
-        summary: advisor.reasoning,
-        source: advisor.role,
-        advisorId: advisor.advisorId,
-        advisorName: advisor.advisorName,
-        advisorRole: advisor.role,
+    } else if (expandTarget) {
+      const probeStatus = probeStatusForSystem(expandTarget.systemId);
+      const commanderId =
+        probeStatus.status === "on_station" || probeStatus.status === "friendly_control"
+          ? "line_command"
+          : "recon_command";
+      command = {
+        key: "command",
+        label: "Command",
+        severity: probeStatus.status === "on_station" || probeStatus.status === "friendly_control" ? "secondary" : "info",
+        title:
+          commanderId === "recon_command"
+            ? `Stage recon for ${expandTarget.systemName}`
+            : `Stage ships for ${expandTarget.systemName}`,
+        summary:
+          commanderId === "recon_command"
+            ? `Scout Captain Neral wants the approach checked before the claim commits.`
+            : `Commodore Vale wants ships ready to exploit the opening at ${expandTarget.systemName} once the timing is right.`,
+        source: commanderId === "recon_command" ? "Recon wing" : "Field command",
+        reasoning:
+          commanderId === "recon_command"
+            ? "Commanders hate guessing at the approach when one probe can narrow the decision."
+            : "A prepared move lands faster and with less panic than a rushed launch after the window starts closing.",
+        ...councilActorDisplayContext(commanderId),
+      };
+    } else if (actionableProbeDepot) {
+      command = {
+        key: "command",
+        label: "Command",
+        severity: "info",
+        title: `Launch from ${actionableProbeDepot.systemName} while stores are ready`,
+        summary: `Scout Captain Neral has a clean probe window there today. Use the depot while the board is still permissive.`,
+        source: "Recon wing",
+        reasoning: "A ready launch point is an operational edge only if we spend it before a crisis claims the same resources.",
+        ...councilActorDisplayContext("recon_command"),
       };
     }
 
     return {
       date: currentWorldDate.value ?? world.scenario.startDate,
-      items: [opportunity, threat, lesson],
+      items: [opportunity, threat, command],
     };
-  });
+  }
+
+  function buildMorningBriefItems(brief) {
+    if (!brief?.items?.length) {
+      return [];
+    }
+
+    const sourceEvidenceId = `brief:${brief.date}`;
+
+    return brief.items.map((item) =>
+      withCouncilDisplayContext({
+        id: `${sourceEvidenceId}:${item.key}`,
+        date: brief.date,
+        eventType: "morning_brief",
+        kicker: "Morning brief",
+        title: item.title,
+        summary: item.summary,
+        analysis: item.summary,
+        tone: item.severity === "contrast" ? "info" : item.severity,
+        sourceEvidenceId,
+        sourceTitle: "Council top focuses",
+        sourceSummary: "The day's clearest opportunity, sharpest threat, and first operational move in one inbox message.",
+        reasoning: item.reasoning ?? item.source,
+        strategicPriority: 100,
+        stance: "top_focus",
+        stanceLabel: item.label,
+        confidenceLabel: item.source,
+        confidenceSeverity: "secondary",
+        ...item,
+      }),
+    );
+  }
+
+  const dailyBrief = computed(() => buildDailyBriefData());
 
   function archiveReportItem(item) {
     if (!item?.id) {
@@ -4702,6 +4748,38 @@ function effectiveMass(ships, cargoSalt, metals) {
     api.error = "";
     api.tone = "info";
     api.status = "Report returned to queue";
+  }
+
+  function setAdvisorIntentDraft(value) {
+    ui.planner.advisorIntentDraft = value ?? "";
+  }
+
+  function submitAdvisorIntent() {
+    const text = String(ui.planner.advisorIntentDraft ?? "").trim();
+    if (!text) {
+      api.error = "Write a high-level order before sending it to the advisor desk.";
+      api.tone = "error";
+      api.status = "No order drafted";
+      return;
+    }
+
+    const submittedAt = currentWorldDate.value ?? world.scenario?.startDate ?? "Unscheduled";
+    ui.planner.advisorOrders = [
+      {
+        id: `advisor-order:${submittedAt}:${ui.planner.advisorOrders.length + 1}`,
+        submittedAt,
+        text,
+        status: runtimeCapabilities.value.ai.mode === "off" ? "Logged for later advisor execution" : "Queued for advisor review",
+      },
+      ...ui.planner.advisorOrders,
+    ].slice(0, 20);
+    ui.planner.advisorIntentDraft = "";
+    api.error = "";
+    api.tone = "info";
+    api.status =
+      runtimeCapabilities.value.ai.mode === "off"
+        ? "Standing order logged"
+        : "Standing order queued";
   }
 
   function updateProductionPlan(systemId, patch) {
@@ -4827,6 +4905,7 @@ function effectiveMass(ships, cargoSalt, metals) {
     selectedSystem,
     selectedSystemFriendly,
     selectedSystemOverview,
+    selectedSystemProductionRow,
     selectedSystemProbeStatus,
     ownedSystems,
     productionPlannerRows,
@@ -4835,6 +4914,7 @@ function effectiveMass(ships, cargoSalt, metals) {
     strategyBoardSummary,
     advisorDeskPolicy: ADVISOR_DESK_POLICY,
     advisorBriefs,
+    selectedSystemAdvisorBriefs,
     dailyBrief,
     probeCommandRows,
     shipOperationRows,
@@ -4854,12 +4934,13 @@ function effectiveMass(ships, cargoSalt, metals) {
     councilActors,
     councilBeliefs,
     feedItems,
-    feedGroups,
     sourceLedgerItems,
     archivedReportItems,
     notebookTodoItems,
+    advisorOrderItems,
     diplomaticInboxItems,
     reconSummary,
+    commandCandidatePlan,
     orderBrief,
     orderSubmission,
     actionUnderway,
@@ -4882,11 +4963,14 @@ function effectiveMass(ships, cargoSalt, metals) {
     setSelectedSystemId,
     setActiveAction,
     setActiveWorkspace,
+    setReportsTab,
     prepareProbeForSystem,
     setProbeOriginSystemId,
     archiveReportItem,
     markReportForFollowUp,
     restoreReportToInbox,
+    setAdvisorIntentDraft,
+    submitAdvisorIntent,
     setProductionFocus,
     setProductionQuantity,
     setProductionPosture,
